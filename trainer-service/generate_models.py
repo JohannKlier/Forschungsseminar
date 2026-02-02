@@ -11,7 +11,7 @@ def main() -> None:
         "seed": 3,
         "points": 10,
     }
-    datasets = ["bike_hourly", "adult_income"]
+    datasets = ["bike_hourly", "breast_cancer"]
     for dataset in datasets:
         request = TrainRequest(dataset=dataset, **defaults)
         payload = _to_jsonable(build_train_response(request))
