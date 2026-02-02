@@ -26,6 +26,8 @@ You need the datasets before running the frontend or backend:
 cd trainer-service
 python -m venv .venv
 source .venv/bin/activate
+# Windows (PowerShell): .venv\Scripts\Activate.ps1
+# Windows (cmd.exe): .venv\Scripts\activate.bat
 pip install -r requirements.txt
 uvicorn python_trainer:app --reload --port 4001
 ```
