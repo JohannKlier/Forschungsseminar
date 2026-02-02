@@ -3,6 +3,8 @@ trainer-service/data/
 
 # Generated model artifacts
 trainer-service/saved_models/
+trainer-service/models/*
+!trainer-service/models/.gitkeep
 
 # Python bytecode cache
 __pycache__/
