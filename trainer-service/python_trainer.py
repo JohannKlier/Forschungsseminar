@@ -12,6 +12,7 @@ from igann import IGANN
 from sklearn.model_selection import train_test_split
 
 from adult_preprocessing import preprocess_adult_income
+from breast_preprocessing import preprocess_breast_cancer
 from bike_preprocessing import preprocess_bike_hourly
 import json
 from pathlib import Path
@@ -149,15 +150,17 @@ def train(request: TrainRequest):
 
 def build_train_response(request: TrainRequest):
     # Validate the dataset early to keep error responses simple and explicit.
-    if request.dataset not in {"bike_hourly", "adult_income"}:
-        raise HTTPException(status_code=400, detail="Only bike_hourly and adult_income are supported.")
+    if request.dataset not in {"bike_hourly", "adult_income", "breast_cancer"}:
+        raise HTTPException(status_code=400, detail="Only bike_hourly, adult_income, and breast_cancer are supported.")
     # Clamp point count to keep UI responsiveness predictable.
     num_points = max(2, min(200, request.points or 10))
-    task_type = "classification" if request.dataset == "adult_income" else "regression"
-    igann_task = "regression" if request.dataset == "adult_income" else task_type
+    task_type = "classification" if request.dataset in {"adult_income", "breast_cancer"} else "regression"
+    igann_task = "regression" if request.dataset in {"adult_income", "breast_cancer"} else task_type
     # Dataset-specific preprocessing returns: features, target, categorical metadata, labels.
     if request.dataset == "adult_income":
         X_proc, y_full, cat_info, labels = preprocess_adult_income(request.seed)
+    elif request.dataset == "breast_cancer":
+        X_proc, y_full, cat_info, labels = preprocess_breast_cancer()
     else:
         X_proc, y_full, cat_info, labels = preprocess_bike_hourly(request.seed)
     # Train/test split for metrics and visual validation.
