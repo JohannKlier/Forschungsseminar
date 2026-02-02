@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DatasetOption, FeatureCurve, KnotSet, Models, StatItem, TrainResponse } from "../types";
 import { loadModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
-import { computeFeatureImportance } from "../lib/importance";
 
 // Dataset registry used by the UI selectors and training requests.
 const DATASETS: DatasetOption[] = [
   { id: "bike_hourly", label: "Bike sharing (hourly)", summary: "Hourly rentals with weather/seasonality." },
   { id: "adult_income", label: "Adult income", summary: "Census income classification (<=50K vs >50K)." },
+  {
+    id: "breast_cancer",
+    label: "Breast cancer (Wisconsin)",
+    summary: "Diagnostic features for malignant vs benign tumors.",
+  },
 ];
 
 // Fixed seed keeps demos deterministic across refreshes.
@@ -34,14 +38,14 @@ const buildEditableKnots = (partial: FeatureCurve): KnotSet => {
 // Main state/logic hook that powers the GAM Lab page.
 type InitOptions = {
   initialModel?: string | null;
-  initialTrain?: { dataset: string; bandwidth: number; points: number } | null;
+  initialTrain?: { dataset: string; points: number } | null;
 };
 
 export const useGamLab = (options: InitOptions = {}) => {
   // User-configurable training inputs.
   const [dataset, setDataset] = useState(DATASETS[0].id);
-  const [bandwidth, setBandwidth] = useState(0.12);
   const [shapePoints, setShapePoints] = useState(10);
+  const defaultBandwidth = 0.12;
   // Global training/loading status and payloads.
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [result, setResult] = useState<TrainResponse | null>(null);
@@ -84,23 +88,18 @@ export const useGamLab = (options: InitOptions = {}) => {
     return partial.label || partial.key || `x${(result.partials.indexOf(partial) ?? 0) + 1}`;
   }, [partial, result]);
 
-  const featureImportances = useMemo(() => {
-    if (!result) return {};
-    const map: Record<string, number> = {};
-    result.partials.forEach((p) => {
-      const knotsForFeature = baselineKnots[p.key] ?? buildEditableKnots(p);
-      map[p.key] = computeFeatureImportance(p, knotsForFeature);
-    });
-    return map;
-  }, [result, baselineKnots]);
-
   // Trigger a fresh training run for the selected dataset and parameters.
-  const train = async () => {
+  const train = async (overrides?: { dataset?: string; points?: number }) => {
     setStatus("loading");
     setDebugError(null);
     setModelSource("train");
     try {
-      const payload = await trainModel({ dataset, bandwidth, seed: DEFAULT_SEED, points: shapePoints });
+      const payload = await trainModel({
+        dataset: overrides?.dataset ?? dataset,
+        bandwidth: defaultBandwidth,
+        seed: DEFAULT_SEED,
+        points: overrides?.points ?? shapePoints,
+      });
       setResult({ ...payload, source: "service" });
       setDebugPayload(payload);
       setStatus("idle");
@@ -114,17 +113,19 @@ export const useGamLab = (options: InitOptions = {}) => {
   };
 
   // Public wrapper for UI buttons.
-  const manualTrain = async () => {
-    await train();
+  const manualTrain = async (overrides?: { dataset?: string; points?: number }) => {
+    await train(overrides);
   };
 
   // Initialize from landing-page query parameters.
   useEffect(() => {
     if (options.initialTrain) {
       setDataset(options.initialTrain.dataset);
-      setBandwidth(options.initialTrain.bandwidth);
       setShapePoints(options.initialTrain.points);
-      manualTrain();
+      manualTrain({
+        dataset: options.initialTrain.dataset,
+        points: options.initialTrain.points,
+      });
       return;
     }
     if (options.initialModel && options.initialModel !== "undefined") {
@@ -487,7 +488,7 @@ export const useGamLab = (options: InitOptions = {}) => {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!result || !modelSource) return;
-    const key = getCacheKey(modelSource, dataset, bandwidth, shapePoints);
+    const key = getCacheKey(modelSource, dataset, defaultBandwidth, shapePoints);
     if (cacheLoadedRef.current === key) return;
     cacheLoadedRef.current = key;
     try {
@@ -533,13 +534,13 @@ export const useGamLab = (options: InitOptions = {}) => {
     } catch (error) {
       console.warn("Failed to restore cached edits.", error);
     }
-  }, [result, modelSource, dataset, bandwidth, shapePoints, baselineKnots, activePartialIdx]);
+  }, [result, modelSource, dataset, defaultBandwidth, shapePoints, baselineKnots, activePartialIdx]);
 
   // Persist history/edits per model so a refresh can resume work.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!result || !modelSource) return;
-    const key = getCacheKey(modelSource, dataset, bandwidth, shapePoints);
+    const key = getCacheKey(modelSource, dataset, defaultBandwidth, shapePoints);
     try {
       window.localStorage.setItem(
         key,
@@ -552,14 +553,12 @@ export const useGamLab = (options: InitOptions = {}) => {
     } catch (error) {
       console.warn("Failed to persist cached edits.", error);
     }
-  }, [history, historyCursor, activePartialIdx, result, modelSource, dataset, bandwidth, shapePoints]);
+  }, [history, historyCursor, activePartialIdx, result, modelSource, dataset, defaultBandwidth, shapePoints]);
 
   return {
     datasets: DATASETS,
     dataset,
     setDataset,
-    bandwidth,
-    setBandwidth,
     shapePoints,
     setShapePoints,
     status,
@@ -594,7 +593,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     selectedDataset,
     partial,
     displayLabel,
-    featureImportances,
   };
 };
 

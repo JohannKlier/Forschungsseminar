@@ -10,7 +10,6 @@ export default function Home() {
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [dataset, setDataset] = useState("bike_hourly");
-  const [bandwidth, setBandwidth] = useState(0.12);
   const [points, setPoints] = useState(10);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -42,7 +41,6 @@ export default function Home() {
       const params = new URLSearchParams({
         train: "1",
         dataset,
-        bandwidth: bandwidth.toString(),
         points: points.toString(),
       });
       router.push(`/gam-lab?${params.toString()}`);
@@ -126,19 +124,8 @@ export default function Home() {
                   >
                     <option value="bike_hourly">Bike sharing (hourly)</option>
                     <option value="adult_income">Adult income</option>
+                    <option value="breast_cancer">Breast cancer (Wisconsin)</option>
                   </select>
-                </label>
-                <label className={styles.field}>
-                  <span className={styles.fieldLabel}>Bandwidth</span>
-                  <input
-                    className={styles.input}
-                    type="number"
-                    step="0.01"
-                    min="0.05"
-                    max="0.25"
-                    value={bandwidth}
-                    onChange={(event) => setBandwidth(Number(event.target.value))}
-                  />
                 </label>
                 <label className={styles.field}>
                   <span className={styles.fieldLabel}>Points</span>

@@ -1,0 +1,13 @@
+# Local datasets
+trainer-service/data/
+
+# Generated model artifacts
+trainer-service/saved_models/
+
+# Python bytecode cache
+__pycache__/
+*.py[cod]
+
+# Virtual environments
+trainer-service/.venv/
+.venv/

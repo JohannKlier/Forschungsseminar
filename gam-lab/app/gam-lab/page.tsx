@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PredictionFitPlot from "./components/PredictionFitPlot";
 import ShapeFunctionsPanel from "./components/ShapeFunctionsPanel";
@@ -15,7 +16,6 @@ export default function GamLabPage() {
   const initialModel = rawModel && rawModel !== "undefined" ? rawModel : null;
   const trainMode = searchParams.get("train") === "1";
   const trainDataset = searchParams.get("dataset") ?? "bike_hourly";
-  const trainBandwidth = Number(searchParams.get("bandwidth") ?? "0.12");
   const trainPoints = Number(searchParams.get("points") ?? "10");
 
   const {
@@ -38,7 +38,6 @@ export default function GamLabPage() {
     setSidebarTab,
     partial,
     displayLabel,
-    featureImportances,
     history,
     historyCursor,
     recordAction,
@@ -51,14 +50,18 @@ export default function GamLabPage() {
     initialTrain: trainMode
       ? {
           dataset: trainDataset,
-          bandwidth: Number.isFinite(trainBandwidth) ? trainBandwidth : 0.12,
           points: Number.isFinite(trainPoints) ? trainPoints : 10,
         }
       : null,
   });
 
+  useEffect(() => {
+    if (!initialModel && !trainMode) {
+      router.replace("/");
+    }
+  }, [initialModel, trainMode, router]);
+
   if (!initialModel && !trainMode) {
-    router.replace("/");
     return null;
   }
 
@@ -104,7 +107,6 @@ export default function GamLabPage() {
               setActivePartialIdx={setActivePartialIdx}
               onRecordAction={recordAction}
               onCommitEdits={commitEdits}
-              featureImportances={featureImportances}
             />
             {models ? <PredictionFitPlot result={result} models={models} /> : null}
             {partial ? (

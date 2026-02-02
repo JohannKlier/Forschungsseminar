@@ -17,7 +17,6 @@ type Props = {
   setActivePartialIdx: Dispatch<SetStateAction<number>>;
   onRecordAction: (featureKey: string, before: KnotSet, after: KnotSet, action?: string) => void;
   onCommitEdits: (featureKey: string, next: KnotSet) => void;
-  featureImportances?: Record<string, number>;
 };
 
 export default function ShapeFunctionsPanel({
@@ -33,7 +32,6 @@ export default function ShapeFunctionsPanel({
   setActivePartialIdx,
   onRecordAction,
   onCommitEdits,
-  featureImportances,
 }: Props) {
   const catDragStartRef = useRef<KnotSet | null>(null);
   const catPendingRef = useRef<KnotSet | null>(null);
@@ -106,17 +104,12 @@ export default function ShapeFunctionsPanel({
               onChange={(event) => setActivePartialIdx(Number(event.target.value))}
               aria-label="Feature"
             >
-              {result.partials.map((p, idx) => {
-                const importance = featureImportances?.[p.key];
-                const importanceLabel = Number.isFinite(importance) ? ` - ${importance!.toFixed(3)}` : "";
-                return (
-                  <option key={p.key} value={idx}>
-                    {p.categories && p.categories.length ? "Cat • " : "Cont • "}
-                    {p.label || p.key || `x${idx + 1}`}
-                    {importanceLabel}
-                  </option>
-                );
-              })}
+              {result.partials.map((p, idx) => (
+                <option key={p.key} value={idx}>
+                  {p.categories && p.categories.length ? "Cat • " : "Cont • "}
+                  {p.label || p.key || `x${idx + 1}`}
+                </option>
+              ))}
             </select>
             <button
               type="button"
