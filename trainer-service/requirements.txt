@@ -4,4 +4,7 @@ pydantic
 numpy
 pandas
 scikit-learn
-igann
+igann @ git+https://github.com/MathiasKraus/igann.git@GAM_wrapper
+dash
+dash-bootstrap-components
+i2dgraph
