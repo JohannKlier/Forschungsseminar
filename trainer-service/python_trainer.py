@@ -4,11 +4,10 @@ from typing import Dict, List
 from collections.abc import Mapping, Sequence
 
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import numpy as np
 import pandas as pd
-from igann import IGANN
+from igann import IGANN_interactive
 from sklearn.model_selection import train_test_split
 
 from adult_preprocessing import preprocess_adult_income
@@ -17,8 +16,7 @@ from bike_preprocessing import preprocess_bike_hourly
 import json
 from pathlib import Path
 
-# Default grid density used when IGANN does not provide a curve for a feature.
-DEFAULT_GRID_POINTS = 120
+
 MODELS_DIR = Path(__file__).parent / "models"
 SAVED_MODELS_DIR = Path(__file__).parent / "saved_models"
 
@@ -29,13 +27,6 @@ class SaveModelRequest(BaseModel):
 
 # FastAPI app setup with permissive CORS so the frontend can call it directly.
 app = FastAPI()
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 class TrainRequest(BaseModel):
@@ -43,32 +34,6 @@ class TrainRequest(BaseModel):
     bandwidth: float
     seed: int
     points: int | None = 10
-
-
-def discretize_curve(grid: List[float], curve: List[float], num_points: int = 20) -> Dict[str, List[float]]:
-    """
-    Sample a smooth curve at a fixed number of points so the frontend can edit/send
-    plain x/y lists instead of dense floats.
-    """
-    if not grid or not curve:
-        return {"x": [], "y": []}
-
-    xs: List[float] = []
-    ys: List[float] = []
-    for i in range(num_points):
-        target_x = grid[0] + (grid[-1] - grid[0]) * i / max(1, num_points - 1)
-        for j in range(len(grid) - 1):
-            if grid[j] <= target_x <= grid[j + 1]:
-                t = (target_x - grid[j]) / max(1e-9, (grid[j + 1] - grid[j]))
-                value = curve[j] * (1 - t) + curve[j + 1] * t
-                xs.append(target_x)
-                ys.append(value)
-                break
-        else:
-            xs.append(target_x)
-            ys.append(curve[min(len(curve) - 1, len(xs) - 1)])
-
-    return {"x": xs, "y": ys}
 
 
 def _to_jsonable(obj):
@@ -171,8 +136,8 @@ def build_train_response(request: TrainRequest):
     y_train = np.array(y_train_arr).flatten()
     y_test = np.array(y_test_arr).flatten()
 
-    # IGANN model chosen for interpretable shape functions.
-    igann = IGANN(
+    # IGANN interactive wrapper can compress to GAM and generate editable points.
+    igann = IGANN_interactive(
         task=igann_task,
         n_estimators=100,
         boost_rate=0.1,
@@ -182,6 +147,9 @@ def build_train_response(request: TrainRequest):
         device="cpu",
         random_state=request.seed,
         verbose=0,
+        GAMwrapper=True,
+        GAM_detail=num_points,
+        scale_y=False,
     )
     igann.fit(X_train_df, y_train)
 
@@ -210,11 +178,12 @@ def build_train_response(request: TrainRequest):
             features_train[cat_key] = [str(v) for v in features_train[cat_key]]
         if cat_key in features_test:
             features_test[cat_key] = [str(v) for v in features_test[cat_key]]
-    feature_matrix = X_train_df.to_numpy()
     test_len = len(X_test_df)
 
-    # Extract learned shape functions from IGANN for visualization.
-    shape_functions = igann.get_shape_functions_as_dict()
+    # Wrapper-generated feature dictionary is the single source of truth.
+    shape_functions = igann.GAM.get_feature_dict() if getattr(igann, "GAM", None) is not None else {}
+    if not shape_functions:
+        raise HTTPException(status_code=500, detail="IGANN GAM wrapper did not produce shape functions.")
 
     def get_shape(key: str) -> Dict:
         return shape_functions.get(key, {})
@@ -255,15 +224,12 @@ def build_train_response(request: TrainRequest):
     train_metrics = calc_metrics(y_train, preds_train)
     test_metrics = calc_metrics(y_test, preds_test)
 
-    grid_points = max(num_points * 4, DEFAULT_GRID_POINTS)
     y_display = y_train.tolist()
 
     # Build partials: each feature gets editable x/y plus scatter data for UI rendering.
     partials = []
     for term_idx, key in enumerate(feature_keys):
         shape_fn = get_shape(key)
-        contrib_train = contribs_train[term_idx] if term_idx < len(contribs_train) else np.zeros_like(y_train)
-        feat_vals = feature_matrix[:, term_idx]
         if key in cat_info:
             # Categorical features: use category indices as editable positions.
             categories = cat_info[key]
@@ -286,21 +252,8 @@ def build_train_response(request: TrainRequest):
                 }
             )
         else:
-            # Continuous features: discretize the learned curve into editable points.
-            xs = shape_fn.get("x", [])
-            ys = shape_fn.get("y", [])
-            if len(xs) and len(ys):
-                pairs = sorted(zip(list(xs), list(ys)), key=lambda p: p[0])
-                sx, sy = zip(*pairs)
-                discrete = discretize_curve(list(sx), list(sy), num_points=num_points)
-            else:
-                fmin = float(np.min(feat_vals))
-                fmax = float(np.max(feat_vals))
-                if fmin == fmax:
-                    fmin -= 1.0
-                    fmax += 1.0
-                grid = np.linspace(fmin, fmax, grid_points)
-                discrete = {"x": grid.tolist(), "y": [0.0 for _ in grid]}
+            # Continuous features: use wrapper-provided points directly.
+            discrete = {"x": list(shape_fn.get("x", [])), "y": list(shape_fn.get("y", []))}
             partials.append(
                 {
                     "key": key,
