@@ -7,7 +7,6 @@ from python_trainer import TrainRequest, build_train_response, MODELS_DIR, _to_j
 def main() -> None:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     defaults = {
-        "bandwidth": 0.12,
         "seed": 3,
         "points": 10,
     }

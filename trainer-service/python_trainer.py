@@ -31,9 +31,14 @@ app = FastAPI()
 
 class TrainRequest(BaseModel):
     dataset: str
-    bandwidth: float
-    seed: int
-    points: int | None = 10
+    seed: int = 3
+    points: int | None = 100
+    n_estimators: int = 100
+    boost_rate: float = 0.1
+    init_reg: float = 1
+    elm_alpha: float = 1
+    early_stopping: int = 50
+    scale_y: bool = True
 
 
 def _to_jsonable(obj):
@@ -117,8 +122,13 @@ def build_train_response(request: TrainRequest):
     # Validate the dataset early to keep error responses simple and explicit.
     if request.dataset not in {"bike_hourly", "adult_income", "breast_cancer"}:
         raise HTTPException(status_code=400, detail="Only bike_hourly, adult_income, and breast_cancer are supported.")
-    # Clamp point count to keep UI responsiveness predictable.
+    # Clamp point count and hyperparameters to keep UI responsiveness predictable.
     num_points = max(2, min(200, request.points or 10))
+    n_estimators = max(10, min(500, request.n_estimators))
+    boost_rate = max(0.01, min(1.0, request.boost_rate))
+    init_reg = max(0.01, min(10.0, request.init_reg))
+    elm_alpha = max(0.01, min(10.0, request.elm_alpha))
+    early_stopping = max(5, min(200, request.early_stopping))
     task_type = "classification" if request.dataset in {"adult_income", "breast_cancer"} else "regression"
     igann_task = "regression" if request.dataset in {"adult_income", "breast_cancer"} else task_type
     # Dataset-specific preprocessing returns: features, target, categorical metadata, labels.
@@ -133,23 +143,24 @@ def build_train_response(request: TrainRequest):
     X_train_df, X_test_df, y_train_arr, y_test_arr = train_test_split(
         X_proc, y_full, test_size=0.2, random_state=request.seed
     )
-    y_train = np.array(y_train_arr).flatten()
-    y_test = np.array(y_test_arr).flatten()
+    y_train = np.array(y_train_arr).astype(float).flatten()
+    y_test = np.array(y_test_arr).astype(float).flatten()
+    use_scale_y = bool(request.scale_y) if task_type == "regression" else False
 
     # IGANN interactive wrapper can compress to GAM and generate editable points.
     igann = IGANN_interactive(
         task=igann_task,
-        n_estimators=100,
-        boost_rate=0.1,
-        init_reg=1,
-        elm_alpha=1,
-        early_stopping=50,
+        n_estimators=n_estimators,
+        boost_rate=boost_rate,
+        init_reg=init_reg,
+        elm_alpha=elm_alpha,
+        early_stopping=early_stopping,
         device="cpu",
         random_state=request.seed,
         verbose=0,
         GAMwrapper=True,
         GAM_detail=num_points,
-        scale_y=False,
+        scale_y=use_scale_y,
     )
     igann.fit(X_train_df, y_train)
 
@@ -269,7 +280,13 @@ def build_train_response(request: TrainRequest):
 
     return {
         "dataset": request.dataset,
-        "bandwidth": request.bandwidth,
+        "seed": request.seed,
+        "n_estimators": n_estimators,
+        "boost_rate": boost_rate,
+        "init_reg": init_reg,
+        "elm_alpha": elm_alpha,
+        "early_stopping": early_stopping,
+        "scale_y": use_scale_y,
         "points": num_points,
         "intercept": intercept_val,
         "partials": partials,
