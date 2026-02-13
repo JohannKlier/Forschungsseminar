@@ -1,6 +1,6 @@
 import { Dispatch, SetStateAction } from "react";
 import styles from "../page.module.css";
-import { FeatureCurve, KnotSet, StatItem } from "../types";
+import { FeatureCurve, StatItem } from "../types";
 
 type HistoryEntry = { featureKey: string; action: string; ts: number; changes: { x: number; before?: number; after?: number; delta?: number }[] };
 
@@ -9,16 +9,6 @@ type Props = {
   setSidebarTab: Dispatch<SetStateAction<"edit" | "history">>;
   displayLabel: string;
   partial: FeatureCurve;
-  selectedKnots: number[];
-  knotEdits: Record<string, KnotSet>;
-  knots: KnotSet;
-  onRecordAction: (featureKey: string, before: KnotSet, after: KnotSet, action?: string) => void;
-  setKnots: Dispatch<SetStateAction<KnotSet>>;
-  setKnotEdits: Dispatch<SetStateAction<Record<string, KnotSet>>>;
-  setSelectedKnots: Dispatch<SetStateAction<number[]>>;
-  onCommitEdits: (featureKey: string, next: KnotSet) => void;
-  applyMonotonic: (direction: "increasing" | "decreasing") => void;
-  addPointsInSelection: () => void;
   onUndo: () => void;
   canUndo: boolean;
   onRedo: () => void;
@@ -36,16 +26,6 @@ export default function SidebarPanel({
   setSidebarTab,
   displayLabel,
   partial,
-  selectedKnots,
-  knotEdits,
-  knots,
-  onRecordAction,
-  setKnots,
-  setKnotEdits,
-  setSelectedKnots,
-  onCommitEdits,
-  applyMonotonic,
-  addPointsInSelection,
   onUndo,
   canUndo,
   onRedo,
@@ -88,123 +68,7 @@ export default function SidebarPanel({
             </div>
           </div>
           <div className={styles.settingsSection}>
-            <p className={styles.settingsLabel}>Selection actions</p>
-            <div className={styles.actionsScroll}>
-              <div className={styles.actionsGroup}>
-                <div className={styles.actionsStack}>
-              <button
-                className={styles.actionButton}
-                type="button"
-                disabled={selectedKnots.length === 0}
-                onClick={() => {
-                  const current = knotEdits[partial.key] ?? knots;
-                  const sel = selectedKnots.length ? selectedKnots : [];
-                  if (sel.length === 0) return;
-                  const avgY = sel.reduce((sum, idx) => sum + (current.y[idx] ?? 0), 0) / sel.length;
-                  const next = { x: [...current.x], y: current.y.map((val, idx) => (sel.includes(idx) ? avgY : val)) };
-                  const changed = next.y.some((v, i) => v !== current.y[i]);
-                  if (changed) onRecordAction(partial.key, current, next, "align");
-                  setKnots(next);
-                  setKnotEdits((prev) => ({ ...prev, [partial.key]: next }));
-                  setSelectedKnots((prev) => prev.filter((idx) => idx < next.x.length));
-                  onCommitEdits(partial.key, next);
-                }}
-              >
-                Align selection
-              </button>
-              {!partial.categories?.length ? (
-                <button
-                  className={styles.actionButton}
-                  type="button"
-                  disabled={selectedKnots.length < 2}
-                  onClick={() => {
-                    const current = knotEdits[partial.key] ?? knots;
-                    const sel = [...selectedKnots].sort((a, b) => (current.x[a] ?? 0) - (current.x[b] ?? 0));
-                    if (sel.length < 2) return;
-                    const y0 = current.y[sel[0]] ?? 0;
-                    const y1 = current.y[sel[sel.length - 1]] ?? 0;
-                    const nextY = [...current.y];
-                    sel.forEach((idx, pos) => {
-                      const t = sel.length === 1 ? 0 : pos / (sel.length - 1);
-                      nextY[idx] = y0 * (1 - t) + y1 * t;
-                    });
-                    const changed = nextY.some((v, i) => v !== current.y[i]);
-                    if (!changed) return;
-                    const next = { x: [...current.x], y: nextY };
-                    onRecordAction(partial.key, current, next, "interpolate");
-                    setKnots(next);
-                    setKnotEdits((prev) => ({ ...prev, [partial.key]: next }));
-                    setSelectedKnots((prev) => prev.filter((idx) => idx < next.x.length));
-                    onCommitEdits(partial.key, next);
-                  }}
-                >
-                  Interpolate line
-                </button>
-              ) : null}
-              {partial.categories?.length ? (
-                <button
-                  className={styles.actionButton}
-                  type="button"
-                  disabled={selectedKnots.length === 0}
-                  onClick={() => {
-                    if (!selectedKnots.length) return;
-                    const current = knotEdits[partial.key] ?? knots;
-                    const next = {
-                      x: [...current.x],
-                      y: current.y.map((val, idx) => (selectedKnots.includes(idx) ? 0 : val)),
-                    };
-                    const changed = next.y.some((v, i) => v !== current.y[i]);
-                    if (changed) onRecordAction(partial.key, current, next, "cat-zero");
-                    setKnots(next);
-                    setKnotEdits((prev) => ({ ...prev, [partial.key]: next }));
-                    setSelectedKnots((prev) => prev.filter((idx) => idx < next.x.length));
-                    onCommitEdits(partial.key, next);
-                  }}
-                >
-                  Set to zero
-                </button>
-              ) : null}
-              <div className={styles.actionsRow}>
-                {!partial.categories?.length ? (
-                  <>
-                    <button
-                      className={styles.actionButton}
-                      type="button"
-                      disabled={selectedKnots.length === 0}
-                      onClick={() => {
-                        applyMonotonic("increasing");
-                      }}
-                    >
-                      Mono ↑
-                    </button>
-                    <button
-                      className={styles.actionButton}
-                      type="button"
-                      disabled={selectedKnots.length === 0}
-                      onClick={() => {
-                        applyMonotonic("decreasing");
-                      }}
-                    >
-                      Mono ↓
-                    </button>
-                  </>
-                ) : null}
-              </div>
-              {!partial.categories?.length ? (
-                <button
-                  className={styles.actionButton}
-                  type="button"
-                  disabled={selectedKnots.length < 2}
-                  onClick={() => {
-                    addPointsInSelection();
-                  }}
-                >
-                  Add points between
-                </button>
-              ) : null}
-            </div>
-              </div>
-            </div>
+            <p className={styles.settingsLabel}>Edits</p>
             <div className={styles.undoRow}>
               <button type="button" className={styles.undoButton} onClick={onUndo} disabled={!canUndo}>
                 ← Undo

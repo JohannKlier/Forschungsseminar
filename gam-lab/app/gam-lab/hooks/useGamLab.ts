@@ -38,14 +38,30 @@ const buildEditableKnots = (partial: FeatureCurve): KnotSet => {
 // Main state/logic hook that powers the GAM Lab page.
 type InitOptions = {
   initialModel?: string | null;
-  initialTrain?: { dataset: string; points: number } | null;
+  initialTrain?: {
+    dataset: string;
+    points: number;
+    seed: number;
+    n_estimators: number;
+    boost_rate: number;
+    init_reg: number;
+    elm_alpha: number;
+    early_stopping: number;
+    scale_y: boolean;
+  } | null;
 };
 
 export const useGamLab = (options: InitOptions = {}) => {
   // User-configurable training inputs.
   const [dataset, setDataset] = useState(DATASETS[0].id);
   const [shapePoints, setShapePoints] = useState(10);
-  const defaultBandwidth = 0.12;
+  const [seed, setSeed] = useState(DEFAULT_SEED);
+  const [nEstimators, setNEstimators] = useState(100);
+  const [boostRate, setBoostRate] = useState(0.1);
+  const [initReg, setInitReg] = useState(1);
+  const [elmAlpha, setElmAlpha] = useState(1);
+  const [earlyStopping, setEarlyStopping] = useState(50);
+  const [scaleY, setScaleY] = useState(true);
   // Global training/loading status and payloads.
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
   const [result, setResult] = useState<TrainResponse | null>(null);
@@ -89,16 +105,33 @@ export const useGamLab = (options: InitOptions = {}) => {
   }, [partial, result]);
 
   // Trigger a fresh training run for the selected dataset and parameters.
-  const train = async (overrides?: { dataset?: string; points?: number }) => {
+  const train = async (
+    overrides?: {
+      dataset?: string;
+      points?: number;
+      seed?: number;
+      n_estimators?: number;
+      boost_rate?: number;
+      init_reg?: number;
+      elm_alpha?: number;
+      early_stopping?: number;
+      scale_y?: boolean;
+    },
+  ) => {
     setStatus("loading");
     setDebugError(null);
     setModelSource("train");
     try {
       const payload = await trainModel({
         dataset: overrides?.dataset ?? dataset,
-        bandwidth: defaultBandwidth,
-        seed: DEFAULT_SEED,
+        seed: overrides?.seed ?? seed,
         points: overrides?.points ?? shapePoints,
+        n_estimators: overrides?.n_estimators ?? nEstimators,
+        boost_rate: overrides?.boost_rate ?? boostRate,
+        init_reg: overrides?.init_reg ?? initReg,
+        elm_alpha: overrides?.elm_alpha ?? elmAlpha,
+        early_stopping: overrides?.early_stopping ?? earlyStopping,
+        scale_y: overrides?.scale_y ?? scaleY,
       });
       setResult({ ...payload, source: "service" });
       setDebugPayload(payload);
@@ -113,7 +146,19 @@ export const useGamLab = (options: InitOptions = {}) => {
   };
 
   // Public wrapper for UI buttons.
-  const manualTrain = async (overrides?: { dataset?: string; points?: number }) => {
+  const manualTrain = async (
+    overrides?: {
+      dataset?: string;
+      points?: number;
+      seed?: number;
+      n_estimators?: number;
+      boost_rate?: number;
+      init_reg?: number;
+      elm_alpha?: number;
+      early_stopping?: number;
+      scale_y?: boolean;
+    },
+  ) => {
     await train(overrides);
   };
 
@@ -122,9 +167,23 @@ export const useGamLab = (options: InitOptions = {}) => {
     if (options.initialTrain) {
       setDataset(options.initialTrain.dataset);
       setShapePoints(options.initialTrain.points);
+      setSeed(options.initialTrain.seed);
+      setNEstimators(options.initialTrain.n_estimators);
+      setBoostRate(options.initialTrain.boost_rate);
+      setInitReg(options.initialTrain.init_reg);
+      setElmAlpha(options.initialTrain.elm_alpha);
+      setEarlyStopping(options.initialTrain.early_stopping);
+      setScaleY(options.initialTrain.scale_y);
       manualTrain({
         dataset: options.initialTrain.dataset,
         points: options.initialTrain.points,
+        seed: options.initialTrain.seed,
+        n_estimators: options.initialTrain.n_estimators,
+        boost_rate: options.initialTrain.boost_rate,
+        init_reg: options.initialTrain.init_reg,
+        elm_alpha: options.initialTrain.elm_alpha,
+        early_stopping: options.initialTrain.early_stopping,
+        scale_y: options.initialTrain.scale_y,
       });
       return;
     }
@@ -157,6 +216,13 @@ export const useGamLab = (options: InitOptions = {}) => {
       setDebugPayload(payload);
       setDataset(payload.dataset);
       setShapePoints(payload.points ?? shapePoints);
+      if (typeof payload.seed === "number") setSeed(payload.seed);
+      if (typeof payload.n_estimators === "number") setNEstimators(payload.n_estimators);
+      if (typeof payload.boost_rate === "number") setBoostRate(payload.boost_rate);
+      if (typeof payload.init_reg === "number") setInitReg(payload.init_reg);
+      if (typeof payload.elm_alpha === "number") setElmAlpha(payload.elm_alpha);
+      if (typeof payload.early_stopping === "number") setEarlyStopping(payload.early_stopping);
+      if (typeof payload.scale_y === "boolean") setScaleY(payload.scale_y);
       setStatus("idle");
     } catch (error) {
       console.warn("Failed to load saved model.", error);
@@ -410,28 +476,35 @@ export const useGamLab = (options: InitOptions = {}) => {
   const stats = useMemo<StatItem[] | null>(() => {
     if (!result || !models) return null;
     const items: StatItem[] = [];
+    const buildPairs = (yTrue: number[], yPred: number[]) =>
+      yTrue
+        .map((y, i) => ({ y, p: yPred[i] }))
+        .filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p)) as { y: number; p: number }[];
+
     const calcRegression = (yTrue: number[], yPred: number[]) => {
-      if (!yTrue.length) return null;
-      const diffs = yTrue.map((v, i) => v - (yPred[i] ?? 0));
-      const mse = diffs.reduce((s, d) => s + d * d, 0) / yTrue.length;
-      const mae = diffs.reduce((s, d) => s + Math.abs(d), 0) / yTrue.length;
+      const pairs = buildPairs(yTrue, yPred);
+      if (!pairs.length) return null;
+      const diffs = pairs.map((pair) => pair.y - pair.p);
+      const mse = diffs.reduce((s, d) => s + d * d, 0) / pairs.length;
+      const mae = diffs.reduce((s, d) => s + Math.abs(d), 0) / pairs.length;
       const rmse = Math.sqrt(mse);
-      const mean = yTrue.reduce((s, v) => s + v, 0) / yTrue.length;
-      const denom = yTrue.reduce((s, v) => s + (v - mean) * (v - mean), 0) || 1;
-      const r2 = 1 - diffs.reduce((s, d) => s + d * d, 0) / denom;
-      return { rmse, r2, mae, count: yTrue.length };
+      const mean = pairs.reduce((s, pair) => s + pair.y, 0) / pairs.length;
+      const denom = pairs.reduce((s, pair) => s + (pair.y - mean) * (pair.y - mean), 0);
+      const r2 = denom > 0 ? 1 - diffs.reduce((s, d) => s + d * d, 0) / denom : 0;
+      return { rmse, r2, mae, count: pairs.length };
     };
     const calcClassification = (yTrue: number[], yPred: number[]) => {
-      if (!yTrue.length) return null;
-      const yBin = yTrue.map((v) => (v >= 0.5 ? 1 : 0));
-      const pBin = yPred.map((v) => (v >= 0.5 ? 1 : 0));
-      const correct = yBin.reduce((s, v, i) => s + (v === (pBin[i] ?? 0) ? 1 : 0), 0);
+      const pairs = buildPairs(yTrue, yPred);
+      if (!pairs.length) return null;
+      const yBin = pairs.map((pair) => (pair.y >= 0.5 ? 1 : 0));
+      const pBin = pairs.map((pair) => (pair.p >= 0.5 ? 1 : 0));
+      const correct = yBin.reduce((s, v, i) => s + (v === pBin[i] ? 1 : 0), 0);
       const acc = correct / yBin.length;
       let tp = 0;
       let fp = 0;
       let fn = 0;
       yBin.forEach((v, i) => {
-        const p = pBin[i] ?? 0;
+        const p = pBin[i];
         if (v === 1 && p === 1) tp += 1;
         if (v === 0 && p === 1) fp += 1;
         if (v === 1 && p === 0) fn += 1;
@@ -460,9 +533,8 @@ export const useGamLab = (options: InitOptions = {}) => {
 
     const makeValueItem = (label: string, value: string): StatItem => ({ label, kind: "value", value });
 
-    const baseMetric = isClassification
-      ? calcClassification(result.y, models.baseModel.preds)
-      : calcRegression(result.y, models.baseModel.preds);
+    const basePreds = Array.isArray(result.predictions) ? result.predictions : models.baseModel.preds;
+    const baseMetric = isClassification ? calcClassification(result.y, basePreds) : calcRegression(result.y, basePreds);
     const editedMetric = isClassification
       ? calcClassification(result.y, models.editedModel.preds)
       : calcRegression(result.y, models.editedModel.preds);
@@ -488,7 +560,18 @@ export const useGamLab = (options: InitOptions = {}) => {
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!result || !modelSource) return;
-    const key = getCacheKey(modelSource, dataset, defaultBandwidth, shapePoints);
+    const key = getCacheKey(
+      modelSource,
+      dataset,
+      shapePoints,
+      seed,
+      nEstimators,
+      boostRate,
+      initReg,
+      elmAlpha,
+      earlyStopping,
+      scaleY,
+    );
     if (cacheLoadedRef.current === key) return;
     cacheLoadedRef.current = key;
     try {
@@ -534,13 +617,38 @@ export const useGamLab = (options: InitOptions = {}) => {
     } catch (error) {
       console.warn("Failed to restore cached edits.", error);
     }
-  }, [result, modelSource, dataset, defaultBandwidth, shapePoints, baselineKnots, activePartialIdx]);
+  }, [
+    result,
+    modelSource,
+    dataset,
+    shapePoints,
+    seed,
+    nEstimators,
+    boostRate,
+    initReg,
+    elmAlpha,
+    earlyStopping,
+    scaleY,
+    baselineKnots,
+    activePartialIdx,
+  ]);
 
   // Persist history/edits per model so a refresh can resume work.
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!result || !modelSource) return;
-    const key = getCacheKey(modelSource, dataset, defaultBandwidth, shapePoints);
+    const key = getCacheKey(
+      modelSource,
+      dataset,
+      shapePoints,
+      seed,
+      nEstimators,
+      boostRate,
+      initReg,
+      elmAlpha,
+      earlyStopping,
+      scaleY,
+    );
     try {
       window.localStorage.setItem(
         key,
@@ -553,7 +661,22 @@ export const useGamLab = (options: InitOptions = {}) => {
     } catch (error) {
       console.warn("Failed to persist cached edits.", error);
     }
-  }, [history, historyCursor, activePartialIdx, result, modelSource, dataset, defaultBandwidth, shapePoints]);
+  }, [
+    history,
+    historyCursor,
+    activePartialIdx,
+    result,
+    modelSource,
+    dataset,
+    shapePoints,
+    seed,
+    nEstimators,
+    boostRate,
+    initReg,
+    elmAlpha,
+    earlyStopping,
+    scaleY,
+  ]);
 
   return {
     datasets: DATASETS,
@@ -561,6 +684,20 @@ export const useGamLab = (options: InitOptions = {}) => {
     setDataset,
     shapePoints,
     setShapePoints,
+    seed,
+    setSeed,
+    nEstimators,
+    setNEstimators,
+    boostRate,
+    setBoostRate,
+    initReg,
+    setInitReg,
+    elmAlpha,
+    setElmAlpha,
+    earlyStopping,
+    setEarlyStopping,
+    scaleY,
+    setScaleY,
     status,
     result,
     debugPayload,
@@ -596,11 +733,22 @@ export const useGamLab = (options: InitOptions = {}) => {
   };
 };
 
-const getCacheKey = (modelSource: string, dataset: string, bandwidth: number, points: number) => {
+const getCacheKey = (
+  modelSource: string,
+  dataset: string,
+  points: number,
+  seed: number,
+  nEstimators: number,
+  boostRate: number,
+  initReg: number,
+  elmAlpha: number,
+  earlyStopping: number,
+  scaleY: boolean,
+) => {
   if (modelSource.startsWith("model:") || modelSource.startsWith("saved:")) {
     return `gam-lab:${modelSource}`;
   }
-  return `gam-lab:train:${dataset}:${bandwidth}:${points}`;
+  return `gam-lab:train:${dataset}:${points}:${seed}:${nEstimators}:${boostRate}:${initReg}:${elmAlpha}:${earlyStopping}:${scaleY}`;
 };
 
 export type GamLabState = ReturnType<typeof useGamLab>;

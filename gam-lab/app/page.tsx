@@ -11,6 +11,13 @@ export default function Home() {
   const [selectedModel, setSelectedModel] = useState("");
   const [dataset, setDataset] = useState("bike_hourly");
   const [points, setPoints] = useState(10);
+  const [seed, setSeed] = useState(3);
+  const [nEstimators, setNEstimators] = useState(100);
+  const [boostRate, setBoostRate] = useState(0.1);
+  const [initReg, setInitReg] = useState(1);
+  const [elmAlpha, setElmAlpha] = useState(1);
+  const [earlyStopping, setEarlyStopping] = useState(50);
+  const [scaleY, setScaleY] = useState(true);
   const [uploadStatus, setUploadStatus] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -42,6 +49,13 @@ export default function Home() {
         train: "1",
         dataset,
         points: points.toString(),
+        seed: seed.toString(),
+        n_estimators: nEstimators.toString(),
+        boost_rate: boostRate.toString(),
+        init_reg: initReg.toString(),
+        elm_alpha: elmAlpha.toString(),
+        early_stopping: earlyStopping.toString(),
+        scale_y: scaleY.toString(),
       });
       router.push(`/gam-lab?${params.toString()}`);
       return;
@@ -138,6 +152,93 @@ export default function Home() {
                     value={points}
                     onChange={(event) => setPoints(Number(event.target.value))}
                   />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Seed</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    step="1"
+                    min="0"
+                    max="9999"
+                    value={seed}
+                    onChange={(event) => setSeed(Number(event.target.value))}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Estimators</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    step="1"
+                    min="10"
+                    max="500"
+                    value={nEstimators}
+                    onChange={(event) => setNEstimators(Number(event.target.value))}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Boost rate</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="1"
+                    value={boostRate}
+                    onChange={(event) => setBoostRate(Number(event.target.value))}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Init reg</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="10"
+                    value={initReg}
+                    onChange={(event) => setInitReg(Number(event.target.value))}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>ELM alpha</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max="10"
+                    value={elmAlpha}
+                    onChange={(event) => setElmAlpha(Number(event.target.value))}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Early stopping</span>
+                  <input
+                    className={styles.input}
+                    type="number"
+                    step="1"
+                    min="5"
+                    max="200"
+                    value={earlyStopping}
+                    onChange={(event) => setEarlyStopping(Number(event.target.value))}
+                  />
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Scale target</span>
+                  <label className={styles.toggleLabel}>
+                    <input
+                      className={styles.toggleInput}
+                      type="checkbox"
+                      checked={scaleY}
+                      onChange={(event) => setScaleY(event.target.checked)}
+                    />
+                    <span className={styles.toggleTrack}>
+                      <span className={styles.toggleThumb} />
+                    </span>
+                    <span className={styles.toggleText}>Normalize y for training</span>
+                  </label>
                 </label>
               </div>
             )}

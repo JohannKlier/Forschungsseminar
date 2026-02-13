@@ -13,7 +13,13 @@ export type FeatureCurve = {
 
 export type TrainResponse = {
   dataset: string;
-  bandwidth: number;
+  seed?: number;
+  n_estimators?: number;
+  boost_rate?: number;
+  init_reg?: number;
+  elm_alpha?: number;
+  early_stopping?: number;
+  scale_y?: boolean;
   intercept?: number;
   task?: "regression" | "classification";
   partials: FeatureCurve[];

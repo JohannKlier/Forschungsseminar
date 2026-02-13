@@ -13,9 +13,14 @@ const fetchWithFallback = async (path: string, init?: RequestInit) => {
 
 export type TrainRequest = {
   dataset: string;
-  bandwidth: number;
   seed: number;
   points: number;
+  n_estimators: number;
+  boost_rate: number;
+  init_reg: number;
+  elm_alpha: number;
+  early_stopping: number;
+  scale_y: boolean;
 };
 
 export const trainModel = async (request: TrainRequest): Promise<TrainResponse> => {

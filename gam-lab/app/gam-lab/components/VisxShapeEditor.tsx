@@ -21,6 +21,13 @@ type Props = {
   onSelectionChange: (indices: number[]) => void;
   featureKey: string;
   interactionMode: "select" | "zoom";
+  dragFalloffRadius?: number;
+  smoothingMode?: boolean;
+  smoothAmount?: number;
+  smoothingRangeMax?: number;
+  smoothingNeighbors?: number;
+  smoothingRate?: number;
+  smoothingStepPerSec?: number;
 };
 
 const PADDING = { top: 16, right: 16, bottom: 72, left: 56 };
@@ -38,6 +45,13 @@ export default function VisxShapeEditor({
   onSelectionChange,
   featureKey,
   interactionMode,
+  dragFalloffRadius = 4,
+  smoothingMode = false,
+  smoothAmount = 0.7,
+  smoothingRangeMax = 6,
+  smoothingNeighbors = 4,
+  smoothingRate = 0.4,
+  smoothingStepPerSec = 0.3,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -49,6 +63,27 @@ export default function VisxShapeEditor({
   const isDraggingRef = useRef(false);
   const dragStartMapRef = useRef<Record<number, number>>({});
   const dragStartYRef = useRef<number | null>(null);
+  const dragStartXRef = useRef<number | null>(null);
+  const dragWeightsRef = useRef<Record<number, number>>({});
+  const smoothWeightsRef = useRef<Record<number, number>>({});
+  const smoothHoverIdxRef = useRef<number | null>(null);
+  const smoothingDragActiveRef = useRef(false);
+  const smoothingRafRef = useRef<number | null>(null);
+  const smoothingTargetIdxRef = useRef<number | null>(null);
+  const smoothingCenterIdxRef = useRef<number | null>(null);
+  const smoothingDragStartYRef = useRef<number | null>(null);
+  const smoothingBaseAmountRef = useRef<number>(0.7);
+  const smoothingDynamicAmountRef = useRef<number>(0.7);
+  const smoothingLastTsRef = useRef<number | null>(null);
+  const smoothingBaseRef = useRef<{ x: number[]; y: number[] } | null>(null);
+  const windowWeightCacheRef = useRef<Map<string, Float32Array>>(new Map());
+  const influenceWeightCacheRef = useRef<Map<string, Float32Array>>(new Map());
+  const smoothingCacheRef = useRef<{
+    radius: number;
+    minIdx: number;
+    maxIdx: number;
+    avg: Float32Array;
+  } | null>(null);
   const pendingSelectionRef = useRef<number[] | null>(null);
   const selectedRef = useRef<number[]>(selected);
   const dragBehaviorRef = useRef<ReturnType<typeof d3Drag<SVGCircleElement, { idx: number }>> | null>(null);
@@ -59,6 +94,7 @@ export default function VisxShapeEditor({
   const onKnotChangeRef = useRef(onKnotChange);
   const onDragStartRef = useRef(onDragStart);
   const onDragEndRef = useRef(onDragEnd);
+  const knotsRef = useRef(knots);
   const histogram = useMemo(() => {
     const vals = Array.isArray(scatterX) ? scatterX : [];
     let minVal = Number.POSITIVE_INFINITY;
@@ -89,6 +125,7 @@ export default function VisxShapeEditor({
     return { bins, binStart, binWidth };
   }, [scatterX]);
 
+
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new ResizeObserver((entries) => {
@@ -106,6 +143,7 @@ export default function VisxShapeEditor({
     onKnotChangeRef.current = onKnotChange;
     onDragStartRef.current = onDragStart;
     onDragEndRef.current = onDragEnd;
+    knotsRef.current = knots;
   }, [onSelectionChange, onKnotChange, onDragStart, onDragEnd]);
 
   useEffect(() => {
@@ -123,6 +161,11 @@ export default function VisxShapeEditor({
       .attr("stroke", (d: any) => (selectedSet.has(d.idx) ? "#0b172a" : "#0b172a"))
       .attr("stroke-width", (d: any) => (selectedSet.has(d.idx) ? 1.5 : 1))
       .attr("r", (d: any) => (selectedSet.has(d.idx) ? 6 : 5));
+    if (!isDraggingRef.current && !(smoothingMode && smoothHoverIdxRef.current != null)) {
+      svg
+        .selectAll<SVGCircleElement, any>("circle.knot")
+        .attr("fill", (d: any) => (selectedSet.has(d.idx) ? "#0b6fa6" : "#0ea5e9"));
+    }
     const selectedNodes = svg
       .selectAll<SVGCircleElement, any>("circle.knot")
       .filter((d: any) => selectedSet.has(d.idx))
@@ -159,7 +202,7 @@ export default function VisxShapeEditor({
     } else {
       content.selectAll("rect.selection-box").remove();
     }
-  }, [selected]);
+  }, [selected, smoothingMode]);
 
   useLayoutEffect(() => {
     const svgEl = svgRef.current;
@@ -228,6 +271,177 @@ export default function VisxShapeEditor({
       .x((d) => xScale(d.x))
       .y((d) => yScale(d.y))
       .curve(curveLinear);
+
+    const computeSmoothingPreview = (hoverIdx: number | null) => {
+      if (!smoothingMode) {
+        smoothWeightsRef.current = {};
+        return;
+      }
+      if (hoverIdx == null) {
+        smoothWeightsRef.current = {};
+        return;
+      }
+      const radius = Math.max(1, Math.round(smoothingRangeMax * smoothAmount));
+      const minIdx = Math.max(0, hoverIdx - radius);
+      const maxIdx = Math.min(knots.x.length - 1, hoverIdx + radius);
+      const live = knotsRef.current ?? knots;
+      const base = smoothingBaseRef.current ?? { x: live.x, y: live.y };
+      let maxDelta = 0;
+      const deltas: Record<number, number> = {};
+      const windowRadius = Math.max(1, Math.min(radius, smoothingNeighbors));
+      const windowSigma = Math.max(1e-3, windowRadius / 2);
+      const windowFade = Math.max(1, Math.round(windowRadius / 2));
+      const windowExtent = windowRadius + windowFade;
+      const windowKey = `${windowRadius}:${windowFade}`;
+      let windowWeights = windowWeightCacheRef.current.get(windowKey);
+      if (!windowWeights) {
+        windowWeights = new Float32Array(windowExtent + 1);
+        for (let dist = 0; dist <= windowExtent; dist += 1) {
+          let weight = Math.exp(-(dist * dist) / (2 * windowSigma * windowSigma));
+          if (dist > windowRadius) {
+            const t = (dist - windowRadius) / windowFade;
+            weight *= 0.5 * (1 + Math.cos(Math.PI * t));
+          }
+          windowWeights[dist] = weight;
+        }
+        windowWeightCacheRef.current.set(windowKey, windowWeights);
+      }
+      const influenceSigma = Math.max(1e-3, radius / 2);
+      const influenceFade = Math.max(1, influenceSigma);
+      for (let i = minIdx; i <= maxIdx; i += 1) {
+        const x = base.x[i];
+        const y = base.y[i];
+        if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+        let wSum = 0;
+        let vSum = 0;
+        const start = Math.max(minIdx, i - windowExtent);
+        const end = Math.min(maxIdx, i + windowExtent);
+        for (let j = start; j <= end; j += 1) {
+          const v = base.y[j];
+          if (!Number.isFinite(v)) continue;
+          const dist = Math.abs(j - i);
+          const weight = windowWeights[dist] ?? 0;
+          wSum += weight;
+          vSum += v * weight;
+        }
+        if (wSum <= 0) continue;
+        const avg = vSum / wSum;
+        const blended = y + (avg - y) * smoothAmount;
+        const delta = Math.abs(blended - y);
+        deltas[i] = delta;
+        if (delta > maxDelta) maxDelta = delta;
+      }
+      if (maxDelta <= 0) {
+        smoothWeightsRef.current = {};
+        return;
+      }
+      const weights: Record<number, number> = {};
+      Object.entries(deltas).forEach(([key, value]) => {
+        weights[Number(key)] = Math.min(1, value / maxDelta);
+      });
+      smoothWeightsRef.current = weights;
+    };
+
+    const applySmoothingHover = (hoverIdx: number | null) => {
+      if (!smoothingMode) return;
+      smoothHoverIdxRef.current = hoverIdx;
+      computeSmoothingPreview(hoverIdx);
+      updateKnotFill();
+    };
+
+    const applySmoothingStep = (dtSec: number) => {
+      if (!smoothingMode || !smoothingDragActiveRef.current) return;
+      const hoverIdx = smoothingTargetIdxRef.current;
+      if (hoverIdx == null) return;
+      const dynamicAmount = Math.max(0, Math.min(1, smoothingDynamicAmountRef.current));
+      const radius = Math.max(1, Math.round(smoothingRangeMax * dynamicAmount));
+      const minIdx = Math.max(0, hoverIdx - radius);
+      const maxIdx = Math.min(knots.x.length - 1, hoverIdx + radius);
+      const live = knotsRef.current ?? knots;
+      const base = smoothingBaseRef.current ?? { x: live.x, y: live.y };
+      const next: { x: number[]; y: number[] } = { x: [...live.x], y: [...live.y] };
+      const windowRadius = Math.max(1, Math.min(radius, smoothingNeighbors));
+      const windowSigma = Math.max(1e-3, windowRadius / 2);
+      const windowFade = Math.max(1, Math.round(windowRadius / 2));
+      const windowExtent = windowRadius + windowFade;
+      const windowKey = `${windowRadius}:${windowFade}`;
+      let windowWeights = windowWeightCacheRef.current.get(windowKey);
+      if (!windowWeights) {
+        windowWeights = new Float32Array(windowExtent + 1);
+        for (let dist = 0; dist <= windowExtent; dist += 1) {
+          let weight = Math.exp(-(dist * dist) / (2 * windowSigma * windowSigma));
+          if (dist > windowRadius) {
+            const t = (dist - windowRadius) / windowFade;
+            weight *= 0.5 * (1 + Math.cos(Math.PI * t));
+          }
+          windowWeights[dist] = weight;
+        }
+        windowWeightCacheRef.current.set(windowKey, windowWeights);
+      }
+      const influenceSigma = Math.max(1e-3, radius / 2);
+      const influenceFade = Math.max(1, influenceSigma);
+      const influenceExtent = radius + Math.ceil(influenceFade);
+      const influenceKey = `${radius}:${Math.round(influenceFade)}`;
+      let influenceWeights = influenceWeightCacheRef.current.get(influenceKey);
+      if (!influenceWeights) {
+        influenceWeights = new Float32Array(influenceExtent + 1);
+        for (let dist = 0; dist <= influenceExtent; dist += 1) {
+          let influence = Math.exp(-(dist * dist) / (2 * influenceSigma * influenceSigma));
+          if (dist > radius + influenceFade) {
+            influence = 0;
+          } else if (dist > radius) {
+            const t = (dist - radius) / influenceFade;
+            influence *= 0.5 * (1 + Math.cos(Math.PI * t));
+          }
+          influenceWeights[dist] = influence;
+        }
+        influenceWeightCacheRef.current.set(influenceKey, influenceWeights);
+      }
+      const start = Math.max(minIdx, hoverIdx - radius);
+      const end = Math.min(maxIdx, hoverIdx + radius);
+        const stepPerSec = Math.max(0.01, smoothingStepPerSec * dynamicAmount * smoothingRate);
+        const dt = Math.min(0.02, dtSec);
+      const step = Math.min(0.2, Math.max(0.003, stepPerSec * dt));
+      const cache = smoothingCacheRef.current;
+      if (!cache || cache.radius !== radius || cache.minIdx !== minIdx || cache.maxIdx !== maxIdx) {
+        const avg = new Float32Array(maxIdx - minIdx + 1);
+        for (let i = minIdx; i <= maxIdx; i += 1) {
+          const x = base.x[i];
+          const current = base.y[i];
+          if (!Number.isFinite(x) || !Number.isFinite(current)) {
+            avg[i - minIdx] = current ?? 0;
+            continue;
+          }
+          let wSum = 0;
+          let vSum = 0;
+          const windowStart = Math.max(minIdx, i - windowExtent);
+          const windowEnd = Math.min(maxIdx, i + windowExtent);
+          for (let j = windowStart; j <= windowEnd; j += 1) {
+            const v = base.y[j];
+            if (!Number.isFinite(v)) continue;
+            const dist = Math.abs(j - i);
+            const weight = windowWeights[dist] ?? 0;
+            wSum += weight;
+            vSum += v * weight;
+          }
+          avg[i - minIdx] = wSum > 0 ? vSum / wSum : current;
+        }
+        smoothingCacheRef.current = { radius, minIdx, maxIdx, avg };
+      }
+      const avgArr = smoothingCacheRef.current?.avg;
+      if (avgArr) {
+        for (let i = start; i <= end; i += 1) {
+          const current = next.y[i];
+          if (!Number.isFinite(current)) continue;
+          const distCenter = Math.abs(i - hoverIdx);
+          const influence = influenceWeights[distCenter] ?? 0;
+          const avg = avgArr[i - minIdx];
+          if (!Number.isFinite(avg)) continue;
+          next.y[i] = current + (avg - current) * step * influence;
+        }
+      }
+      onKnotChangeRef.current(next);
+    };
 
     svg.attr("width", width).attr("height", HEIGHT);
     const content = svg.selectAll<SVGGElement, null>("g.shape-root").data([null]).join("g").classed("shape-root", true);
@@ -368,12 +582,41 @@ export default function VisxShapeEditor({
       .attr("stroke-width", 3)
       .attr("d", lineGen);
 
+    const baseColor = [14, 165, 233];
+    const highlightColor = [225, 29, 72];
+    const blendColor = (t: number) => {
+      if (!Number.isFinite(t)) return "rgb(14, 165, 233)";
+      const clamped = Math.max(0, Math.min(1, t));
+      const r = Math.round(baseColor[0] + (highlightColor[0] - baseColor[0]) * clamped);
+      const g = Math.round(baseColor[1] + (highlightColor[1] - baseColor[1]) * clamped);
+      const b = Math.round(baseColor[2] + (highlightColor[2] - baseColor[2]) * clamped);
+      return `rgb(${r}, ${g}, ${b})`;
+    };
+    const updateKnotFill = (selection?: d3.Selection<SVGCircleElement, any, SVGGElement, unknown>) => {
+      const selectedSet = new Set(selectedRef.current);
+      const sel = selection ?? content.selectAll<SVGCircleElement, any>("circle.knot");
+      sel.attr("fill", (d: any) => {
+        const idx = d.idx as number;
+        if (isDraggingRef.current) {
+          const raw = dragWeightsRef.current[idx];
+          const weight = Number.isFinite(raw) ? (raw as number) : 0;
+          return blendColor(weight);
+        }
+        if (smoothingMode && smoothHoverIdxRef.current != null) {
+          const raw = smoothWeightsRef.current[idx];
+          const weight = Number.isFinite(raw) ? (raw as number) : 0;
+          if (weight > 0) return blendColor(weight);
+        }
+        return selectedSet.has(idx) ? "#0c4a6e" : "#0ea5e9";
+      });
+    };
     const applyDragPreview = (next: { x: number[]; y: number[] }) => {
       const nextSorted = sortedKnots.map((d) => ({ ...d, y: next.y[d.idx] ?? d.y }));
       content.selectAll<SVGPathElement, any>("path.shape-path").attr("d", lineGen(nextSorted) ?? "");
       content
         .selectAll<SVGCircleElement, any>("circle.knot")
         .attr("cy", (d: any) => yScale(next.y[d.idx] ?? d.y));
+      updateKnotFill();
       const selectedSet = new Set(selectedRef.current);
       const selectedKnots = nextSorted.filter((d) => selectedSet.has(d.idx));
       if (selectedKnots.length > 1) {
@@ -409,12 +652,15 @@ export default function VisxShapeEditor({
       const selectedSet = new Set(nextSelection);
       content
         .selectAll<SVGCircleElement, any>("circle.knot")
-        .attr("fill", (d: any) => (selectedSet.has(d.idx) ? "#0c4a6e" : "#0ea5e9"))
         .attr("stroke", "#0b172a")
         .attr("stroke-width", 1);
+      updateKnotFill();
     };
 
+    const DRAG_FALLOFF_RADIUS = Math.max(0, dragFalloffRadius);
+    const DRAG_FALLOFF_SIGMA = DRAG_FALLOFF_RADIUS > 0 ? DRAG_FALLOFF_RADIUS / 2 : 1;
     const dragBehaviour = d3Drag<SVGCircleElement, { idx: number }>()
+      .filter(() => !smoothingMode)
       .on("start", (event, d) => {
         isDraggingRef.current = true;
         const multi = event.sourceEvent.shiftKey || event.sourceEvent.metaKey || event.sourceEvent.ctrlKey;
@@ -436,15 +682,10 @@ export default function VisxShapeEditor({
         const svgRect = svgEl.getBoundingClientRect();
         const localY = Math.min(PADDING.top + usableHeight, Math.max(PADDING.top, event.sourceEvent.clientY - svgRect.top));
         dragStartYRef.current = yScale.invert(localY);
+        dragStartXRef.current = event.sourceEvent.clientX;
         const startMap: Record<number, number> = {};
-        const seedTargets =
-          dragTargetsRef.current.length
-            ? dragTargetsRef.current
-            : d && d.idx != null
-              ? [d.idx]
-              : [];
-        seedTargets.forEach((i) => {
-          startMap[i] = knots.y[i];
+        knots.y.forEach((value, idx) => {
+          startMap[idx] = value;
         });
         dragStartMapRef.current = startMap;
         if (onDragStartRef.current) onDragStartRef.current({ x: knots.x, y: knots.y });
@@ -453,6 +694,8 @@ export default function VisxShapeEditor({
         const svgRect = svgEl.getBoundingClientRect();
         const localY = Math.min(PADDING.top + usableHeight, Math.max(PADDING.top, event.sourceEvent.clientY - svgRect.top));
         const newY = yScale.invert(localY);
+        const dragStartX = dragStartXRef.current;
+        const dxPx = dragStartX == null ? 0 : event.sourceEvent.clientX - dragStartX;
         const next = { x: [...knots.x], y: [...knots.y] };
         const targets = dragTargetsRef.current.length
           ? dragTargetsRef.current
@@ -463,10 +706,58 @@ export default function VisxShapeEditor({
         const startMap = dragStartMapRef.current;
         const dragStartY = dragStartYRef.current;
         const delta = dragStartY == null ? 0 : newY - dragStartY;
-        targets.forEach((i) => {
-          const base = startMap[i] ?? knots.y[i];
-          next.y[i] = base + delta;
+        const sortedTargets = [...targets].sort((a, b) => a - b);
+        const avgSpacingPx = (() => {
+          if (sortedKnots.length < 2) return 24;
+          let total = 0;
+          for (let i = 1; i < sortedKnots.length; i += 1) {
+            total += Math.abs(xScale(sortedKnots[i].x) - xScale(sortedKnots[i - 1].x));
+          }
+          return Math.max(6, total / (sortedKnots.length - 1));
+        })();
+        const radiusBoost = avgSpacingPx > 0 ? dxPx / avgSpacingPx : 0;
+        const dynamicRadius = Math.max(0, Math.min(60, DRAG_FALLOFF_RADIUS + radiusBoost));
+        const dynamicSigma = dynamicRadius > 0 ? dynamicRadius / 2 : 1;
+        const nearestDistance = (idx: number) => {
+          if (!sortedTargets.length) return Number.POSITIVE_INFINITY;
+          let best = Math.abs(sortedTargets[0] - idx);
+          for (let i = 1; i < sortedTargets.length; i += 1) {
+            const dist = Math.abs(sortedTargets[i] - idx);
+            if (dist < best) best = dist;
+            if (best === 0) break;
+          }
+          return best;
+        };
+        const weights: Record<number, number> = {};
+        const fade = Math.max(1, dynamicSigma);
+        next.y = next.y.map((_, idx) => {
+          const base = startMap[idx] ?? knots.y[idx];
+          const dist = nearestDistance(idx);
+          if (!Number.isFinite(dist)) {
+            weights[idx] = 0;
+            return base;
+          }
+          if (dist === 0) {
+            weights[idx] = 1;
+            return base + delta;
+          }
+          if (dynamicRadius === 0) {
+            weights[idx] = 0;
+            return base;
+          }
+          if (dist > dynamicRadius + fade) {
+            weights[idx] = 0;
+            return base;
+          }
+          const weight = Math.exp(-(dist * dist) / (2 * dynamicSigma * dynamicSigma));
+          const tapered =
+            dist > dynamicRadius
+              ? weight * 0.5 * (1 + Math.cos(Math.PI * (dist - dynamicRadius) / fade))
+              : weight;
+          weights[idx] = tapered;
+          return base + delta * tapered;
         });
+        dragWeightsRef.current = weights;
         pendingDragRef.current = next;
         if (rafIdRef.current == null) {
           rafIdRef.current = window.requestAnimationFrame(() => {
@@ -482,6 +773,8 @@ export default function VisxShapeEditor({
         isDraggingRef.current = false;
         dragStartMapRef.current = {};
         dragStartYRef.current = null;
+        dragStartXRef.current = null;
+        dragWeightsRef.current = {};
         if (pendingSelectionRef.current) {
           onSelectionChangeRef.current(pendingSelectionRef.current);
           pendingSelectionRef.current = null;
@@ -631,6 +924,8 @@ export default function VisxShapeEditor({
               })();
               onSelectionChangeRef.current(nextSelection);
             })
+            .on("mouseenter", (_, d) => applySmoothingHover(d.idx))
+            .on("mouseleave", () => applySmoothingHover(null))
             .call(dragBehaviour as any),
         (update) => update,
         (exit) => exit.remove()
@@ -646,6 +941,7 @@ export default function VisxShapeEditor({
             .classed("knot", true)
             .classed("drag-handle", true)
             .attr("r", 5)
+            .attr("fill", "#0ea5e9")
             .style("cursor", "grab")
             .on("click", (event, d) => {
               event.stopPropagation();
@@ -664,13 +960,136 @@ export default function VisxShapeEditor({
         (update) => update,
         (exit) => exit.remove()
       )
+      .on("mouseenter", (_, d) => applySmoothingHover(d.idx))
+      .on("mouseleave", () => applySmoothingHover(null))
       .attr("cx", (d) => xScale(d.x))
       .attr("cy", (d) => yScale(d.y))
       .attr("stroke", "#0b172a")
       .attr("stroke-width", 1);
 
     svg.on("click", () => onSelectionChangeRef.current([]));
-  }, [knots, baseline, width, featureKey, title, histogram, interactionMode]);
+    svg.on("mouseleave", () => applySmoothingHover(null));
+
+    const smoothingLayer = content
+      .selectAll<SVGRectElement, null>("rect.smooth-layer")
+      .data([null])
+      .join("rect")
+      .classed("smooth-layer", true)
+      .attr("x", PADDING.left)
+      .attr("y", PADDING.top)
+      .attr("width", usableWidth)
+      .attr("height", usableHeight)
+      .style("fill", "transparent")
+      .style("pointer-events", smoothingMode ? "all" : "none")
+      .style("cursor", smoothingMode ? "crosshair" : "default");
+
+    const smoothingDrag = d3Drag<SVGRectElement, null>()
+      .filter((event) => {
+        const target = event.target as Element | null;
+        return smoothingMode && !isDraggingRef.current && !target?.closest(".drag-handle");
+      })
+      .on("start", (event) => {
+        smoothingDragActiveRef.current = true;
+        smoothingDragStartYRef.current = event.sourceEvent.clientY;
+        smoothingBaseAmountRef.current = smoothAmount;
+        smoothingDynamicAmountRef.current = smoothAmount;
+        smoothingLastTsRef.current = null;
+        smoothingBaseRef.current = { x: [...knots.x], y: [...knots.y] };
+        smoothingCacheRef.current = null;
+        const svgRect = svgEl.getBoundingClientRect();
+        const localX = Math.min(PADDING.left + usableWidth, Math.max(PADDING.left, event.sourceEvent.clientX - svgRect.left));
+        const xVal = xScale.invert(localX);
+        const nearest = sortedKnots.reduce(
+          (best, item) => {
+            const dist = Math.abs(item.x - xVal);
+            return dist < best.dist ? { idx: item.idx, dist } : best;
+          },
+          { idx: sortedKnots[0]?.idx ?? null, dist: Number.POSITIVE_INFINITY }
+        );
+        smoothingCenterIdxRef.current = nearest.idx;
+        smoothingTargetIdxRef.current = nearest.idx;
+        applySmoothingHover(nearest.idx);
+        applySmoothingStep(0.05);
+        if (smoothingRafRef.current == null) {
+          const tick = (ts: number) => {
+            smoothingRafRef.current = null;
+            if (!smoothingDragActiveRef.current) return;
+            const last = smoothingLastTsRef.current ?? ts;
+            const dtSec = Math.max(0, (ts - last) / 1000);
+            smoothingLastTsRef.current = ts;
+            applySmoothingStep(dtSec);
+            smoothingRafRef.current = window.requestAnimationFrame(tick);
+          };
+          smoothingRafRef.current = window.requestAnimationFrame(tick);
+        }
+      })
+      .on("drag", (event) => {
+        if (smoothingDragStartYRef.current != null) {
+          const dy = smoothingDragStartYRef.current - event.sourceEvent.clientY;
+          const boost = dy / 200;
+          smoothingDynamicAmountRef.current = Math.max(0, Math.min(1, smoothingBaseAmountRef.current + boost));
+          smoothingCacheRef.current = null;
+        }
+        const locked = smoothingCenterIdxRef.current;
+        if (locked != null) {
+          smoothingTargetIdxRef.current = locked;
+          applySmoothingHover(locked);
+        }
+        applySmoothingStep(0.016);
+      })
+      .on("end", () => {
+        smoothingDragActiveRef.current = false;
+        smoothingTargetIdxRef.current = null;
+        smoothingCenterIdxRef.current = null;
+        smoothingDragStartYRef.current = null;
+        smoothingLastTsRef.current = null;
+        smoothingBaseRef.current = null;
+        if (smoothingRafRef.current != null) {
+          window.cancelAnimationFrame(smoothingRafRef.current);
+          smoothingRafRef.current = null;
+        }
+        applySmoothingHover(null);
+        smoothingCacheRef.current = null;
+      });
+
+    smoothingLayer.call(smoothingDrag as any);
+    smoothingLayer
+      .on("mousemove", (event) => {
+        if (!smoothingMode || smoothingDragActiveRef.current) return;
+        const svgRect = svgEl.getBoundingClientRect();
+        const localX = Math.min(PADDING.left + usableWidth, Math.max(PADDING.left, event.clientX - svgRect.left));
+        const xVal = xScale.invert(localX);
+        const nearest = sortedKnots.reduce(
+          (best, item) => {
+            const dist = Math.abs(item.x - xVal);
+            return dist < best.dist ? { idx: item.idx, dist } : best;
+          },
+          { idx: sortedKnots[0]?.idx ?? null, dist: Number.POSITIVE_INFINITY }
+        );
+        smoothingTargetIdxRef.current = nearest.idx;
+        applySmoothingHover(nearest.idx);
+      })
+      .on("mouseleave", () => applySmoothingHover(null));
+    smoothingLayer.raise();
+
+    svg.style("cursor", smoothingMode ? "crosshair" : "default");
+  }, [
+    knots,
+    baseline,
+    width,
+    featureKey,
+    title,
+    histogram,
+    interactionMode,
+    dragFalloffRadius,
+    smoothingMode,
+    smoothAmount,
+    smoothingRangeMax,
+    smoothingNeighbors,
+    smoothingRate,
+    smoothingStepPerSec,
+    selected,
+  ]);
 
   return (
     <div ref={containerRef} className={styles.chartFrame} style={{ width: "100%" }}>

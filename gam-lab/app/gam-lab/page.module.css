@@ -297,6 +297,56 @@
   color: #64748b;
 }
 
+.toggleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  cursor: pointer;
+  font-weight: 600;
+  position: relative;
+}
+
+.toggleInput {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.toggleTrack {
+  width: 46px;
+  height: 26px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  position: relative;
+  box-shadow: inset 0 0 0 1px #cbd5f5;
+  transition: background 0.2s ease;
+}
+
+.toggleThumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 4px 8px rgba(15, 23, 42, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.toggleInput:checked + .toggleTrack {
+  background: #0f172a;
+}
+
+.toggleInput:checked + .toggleTrack .toggleThumb {
+  transform: translateX(20px);
+}
+
+.toggleText {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
 .dashboard {
   display: flex;
   flex-direction: column;
@@ -409,6 +459,25 @@
 .panelControlRow .panelActions {
   position: absolute;
   right: 0;
+}
+
+.rangeControl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 180px;
+}
+
+.rangeControl input {
+  accent-color: #0ea5e9;
+}
+
+.panelTools {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  margin-top: 0.65rem;
 }
 
 .panelActions {
@@ -826,8 +895,9 @@
 
 .actionsStack {
   display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.4rem;
   margin: 0.5rem 0 0;
 }
 
@@ -838,7 +908,7 @@
 }
 
 .actionsScroll {
-  max-height: 220px;
+  max-height: 320px;
   overflow: auto;
   padding-right: 0.2rem;
   scrollbar-width: none;
@@ -885,10 +955,45 @@
   transition: transform 0.1s ease, box-shadow 0.1s ease;
 }
 
+.actionButtonSquare {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.05;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: normal;
+}
+
+.actionIconButton {
+  font-weight: 700;
+}
+
 
 .actionButton:hover {
   transform: translateY(-1px);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.14);
+}
+
+.actionControl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+}
+
+.actionControlLabel {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.actionRange {
+  accent-color: #0ea5e9;
 }
 
 .actionButton:active {
