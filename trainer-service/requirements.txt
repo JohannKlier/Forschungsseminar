@@ -4,7 +4,7 @@ pydantic
 numpy
 pandas
 scikit-learn
-igann @ git+https://github.com/JohannKlier/igann.git@GAM_wrapper_scale_y_fix
+-e ../../igann
 dash
 dash-bootstrap-components
 i2dgraph

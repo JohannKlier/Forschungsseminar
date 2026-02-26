@@ -13,6 +13,11 @@ export type FeatureCurve = {
 
 export type TrainResponse = {
   dataset: string;
+  model_type?: "igann" | "igann_interactive";
+  center_shapes?: boolean;
+  refit_from_edits?: boolean;
+  locked_features?: string[];
+  point_counts?: Record<string, number>;
   seed?: number;
   n_estimators?: number;
   boost_rate?: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PredictionFitPlot from "./components/PredictionFitPlot";
 import ShapeFunctionsPanel from "./components/ShapeFunctionsPanel";
@@ -9,14 +9,16 @@ import styles from "./page.module.css";
 import { useGamLab } from "./hooks/useGamLab";
 import { useSidebarActions } from "./hooks/useSidebarActions";
 
-export default function GamLabPage() {
+function GamLabPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawModel = searchParams.get("model");
   const initialModel = rawModel && rawModel !== "undefined" ? rawModel : null;
   const trainMode = searchParams.get("train") === "1";
   const trainDataset = searchParams.get("dataset") ?? "bike_hourly";
-  const trainPoints = Number(searchParams.get("points") ?? "10");
+  const trainModelType = (searchParams.get("model_type") ?? "igann") as "igann" | "igann_interactive";
+  const trainCenterShapes = searchParams.get("center_shapes") === "true";
+  const trainPoints = Number(searchParams.get("points") ?? "250");
   const trainSeed = Number(searchParams.get("seed") ?? "3");
   const trainEstimators = Number(searchParams.get("n_estimators") ?? "100");
   const trainBoostRate = Number(searchParams.get("boost_rate") ?? "0.1");
@@ -31,6 +33,10 @@ export default function GamLabPage() {
     datasets,
     dataset,
     setDataset,
+    modelType,
+    setModelType,
+    centerShapes,
+    setCenterShapes,
     shapePoints,
     setShapePoints,
     seed,
@@ -59,8 +65,11 @@ export default function GamLabPage() {
     setActivePartialIdx,
     stats,
     models,
+    lockedFeatures,
     handleSave,
     manualTrain,
+    manualRefitFromEdits,
+    toggleFeatureLock,
     sidebarTab,
     setSidebarTab,
     partial,
@@ -78,7 +87,9 @@ export default function GamLabPage() {
     initialTrain: trainMode
       ? {
           dataset: trainDataset,
-          points: Number.isFinite(trainPoints) ? trainPoints : 10,
+          model_type: trainModelType === "igann_interactive" ? "igann_interactive" : "igann",
+          center_shapes: trainCenterShapes,
+          points: Number.isFinite(trainPoints) ? trainPoints : 250,
           seed: Number.isFinite(trainSeed) ? trainSeed : 3,
           n_estimators: Number.isFinite(trainEstimators) ? trainEstimators : 100,
           boost_rate: Number.isFinite(trainBoostRate) ? trainBoostRate : 0.1,
@@ -114,12 +125,9 @@ export default function GamLabPage() {
     baselineKnots,
   });
 
-  const [smoothAmount, setSmoothAmount] = useState(0.7);
+  const smoothAmount = 0.5;
   const [smoothingMode, setSmoothingMode] = useState(false);
-  const [smoothingRangeMax, setSmoothingRangeMax] = useState(6);
-  const [smoothingNeighbors, setSmoothingNeighbors] = useState(4);
-  const [smoothingRate, setSmoothingRate] = useState(0.4);
-  const [smoothingStepPerSec, setSmoothingStepPerSec] = useState(0.3);
+  const smoothingRangeMax = 32;
 
   return (
     <div className={styles.pageFrame}>
@@ -149,6 +157,16 @@ export default function GamLabPage() {
                         type="button"
                         className={styles.panelButton}
                         onClick={() => {
+                          manualRefitFromEdits();
+                        }}
+                        disabled={status === "loading" || !result || modelType !== "igann_interactive"}
+                      >
+                        {status === "loading" ? "Refitting..." : "Refit from edits"}
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.panelButton}
+                        onClick={() => {
                           manualTrain();
                         }}
                         disabled={status === "loading"}
@@ -174,13 +192,40 @@ export default function GamLabPage() {
                     </select>
                   </label>
                   <label className={styles.sliderLabel}>
+                    <span className={styles.controlLabel}>Model</span>
+                    <select
+                      className={styles.datasetSelect}
+                      value={modelType}
+                      onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
+                    >
+                      <option value="igann">IGANN</option>
+                      <option value="igann_interactive">IGANN interactive</option>
+                    </select>
+                  </label>
+                  <label className={styles.sliderLabel}>
+                    <span className={styles.controlLabel}>Center shapes</span>
+                    <label className={styles.toggleLabel}>
+                      <input
+                        className={styles.toggleInput}
+                        type="checkbox"
+                        checked={centerShapes}
+                        disabled={modelType !== "igann_interactive"}
+                        onChange={(event) => setCenterShapes(event.target.checked)}
+                      />
+                      <span className={styles.toggleTrack}>
+                        <span className={styles.toggleThumb} />
+                      </span>
+                      <span className={styles.toggleText}>Enforce E[fj(Xj)] = 0</span>
+                    </label>
+                  </label>
+                  <label className={styles.sliderLabel}>
                     <span className={styles.controlLabel}>Points</span>
                     <input
                       className={styles.datasetSelect}
                       type="number"
                       step="1"
                       min="2"
-                      max="200"
+                      max="250"
                       value={shapePoints}
                       onChange={(event) => setShapePoints(Number(event.target.value))}
                     />
@@ -286,22 +331,16 @@ export default function GamLabPage() {
               setSelectedKnots={setSelectedKnots}
               activePartialIdx={activePartialIdx}
               setActivePartialIdx={setActivePartialIdx}
+              lockedFeatures={lockedFeatures}
+              onToggleFeatureLock={toggleFeatureLock}
               onRecordAction={recordAction}
               onCommitEdits={commitEdits}
               applyMonotonic={applyMonotonic}
               addPointsInSelection={addPointsInSelection}
               smoothAmount={smoothAmount}
-              setSmoothAmount={setSmoothAmount}
               smoothingMode={smoothingMode}
               setSmoothingMode={setSmoothingMode}
               smoothingRangeMax={smoothingRangeMax}
-              setSmoothingRangeMax={setSmoothingRangeMax}
-              smoothingNeighbors={smoothingNeighbors}
-              setSmoothingNeighbors={setSmoothingNeighbors}
-              smoothingRate={smoothingRate}
-              setSmoothingRate={setSmoothingRate}
-              smoothingStepPerSec={smoothingStepPerSec}
-              setSmoothingStepPerSec={setSmoothingStepPerSec}
             />
             {models ? <PredictionFitPlot result={result} models={models} /> : null}
             {partial ? (
@@ -328,5 +367,13 @@ export default function GamLabPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function GamLabPage() {
+  return (
+    <Suspense fallback={null}>
+      <GamLabPageContent />
+    </Suspense>
   );
 }

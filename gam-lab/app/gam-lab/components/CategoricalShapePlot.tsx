@@ -390,8 +390,8 @@ export default function CategoricalShapePlot({
     baseSel
       .attr("x", (d) => ((xScaleD3(d.cat) ?? pad.left) + xScaleD3.bandwidth() * 0.15))
       .attr("width", xScaleD3.bandwidth() * 0.7)
-      .attr("fill", "rgba(148,163,184,0.12)")
-      .attr("stroke", "rgba(148,163,184,0.6)")
+      .attr("fill", "rgba(245,158,11,0.14)")
+      .attr("stroke", "rgba(245,158,11,0.85)")
       .attr("stroke-width", 1)
       .attr("y", (d) => {
         const y0 = yScale(Math.max(0, d.val));

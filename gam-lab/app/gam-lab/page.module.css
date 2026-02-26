@@ -623,6 +623,101 @@
   height: 566px;
 }
 
+.shapeLegend {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin: 0.15rem 0 0.5rem;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.shapeLegendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.shapeLegendSwatch {
+  width: 20px;
+  height: 0;
+  border-top-width: 3px;
+  border-top-style: solid;
+  border-radius: 999px;
+}
+
+.shapeLegendSwatchBefore {
+  border-top-color: #f59e0b;
+  border-top-style: dashed;
+}
+
+.shapeLegendSwatchCurrent {
+  border-top-color: #0ea5e9;
+}
+
+.gridView {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.gridCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #f8fafc;
+  padding: 0.55rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gridCard:hover {
+  border-color: #94a3b8;
+}
+
+.gridCardTitle {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0.3rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gridChart {
+  width: 100%;
+  height: 150px;
+  display: block;
+}
+
+.gridZeroLine {
+  stroke: #cbd5e1;
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.gridBaselineLine {
+  stroke: #f59e0b;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.gridCurrentLine {
+  stroke: #0ea5e9;
+  stroke-width: 2.5;
+}
+
+.gridBaselineBar {
+  fill: rgba(245, 158, 11, 0.2);
+  stroke: rgba(245, 158, 11, 0.9);
+}
+
+.gridCurrentBar {
+  fill: rgba(14, 165, 233, 0.7);
+  stroke: #0284c7;
+}
+
 .partialHeader {
   display: flex;
   flex-direction: column;
@@ -956,8 +1051,8 @@
 }
 
 .actionButtonSquare {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border-radius: 0.5rem;
   font-size: 0.9rem;
@@ -971,6 +1066,13 @@
 
 .actionIconButton {
   font-weight: 700;
+}
+
+.actionIconImage {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 

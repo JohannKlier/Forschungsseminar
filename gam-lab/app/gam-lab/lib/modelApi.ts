@@ -13,6 +13,8 @@ const fetchWithFallback = async (path: string, init?: RequestInit) => {
 
 export type TrainRequest = {
   dataset: string;
+  model_type: "igann" | "igann_interactive";
+  center_shapes: boolean;
   seed: number;
   points: number;
   n_estimators: number;
@@ -23,6 +25,18 @@ export type TrainRequest = {
   scale_y: boolean;
 };
 
+export type RefitRequest = TrainRequest & {
+  partials: Array<{
+    key: string;
+    categories?: string[];
+    editableX?: number[];
+    editableY?: number[];
+  }>;
+  refit_estimators: number;
+  refit_early_stopping?: number;
+  locked_features?: string[];
+};
+
 export const trainModel = async (request: TrainRequest): Promise<TrainResponse> => {
   const response = await fetchWithFallback("/train", {
     method: "POST",
@@ -30,6 +44,16 @@ export const trainModel = async (request: TrainRequest): Promise<TrainResponse> 
     body: JSON.stringify(request),
   });
   if (!response.ok) throw new Error(`Trainer responded with ${response.status}`);
+  return (await response.json()) as TrainResponse;
+};
+
+export const refitModel = async (request: RefitRequest): Promise<TrainResponse> => {
+  const response = await fetchWithFallback("/refit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) throw new Error(`Refit responded with ${response.status}`);
   return (await response.json()) as TrainResponse;
 };
 

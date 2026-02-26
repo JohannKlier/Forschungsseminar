@@ -10,7 +10,9 @@ export default function Home() {
   const [models, setModels] = useState<string[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [dataset, setDataset] = useState("bike_hourly");
-  const [points, setPoints] = useState(10);
+  const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann");
+  const [centerShapes, setCenterShapes] = useState(false);
+  const [points, setPoints] = useState(250);
   const [seed, setSeed] = useState(3);
   const [nEstimators, setNEstimators] = useState(100);
   const [boostRate, setBoostRate] = useState(0.1);
@@ -48,6 +50,8 @@ export default function Home() {
       const params = new URLSearchParams({
         train: "1",
         dataset,
+        model_type: modelType,
+        center_shapes: centerShapes.toString(),
         points: points.toString(),
         seed: seed.toString(),
         n_estimators: nEstimators.toString(),
@@ -142,13 +146,39 @@ export default function Home() {
                   </select>
                 </label>
                 <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Model</span>
+                  <select
+                    className={styles.select}
+                    value={modelType}
+                    onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
+                  >
+                    <option value="igann">IGANN</option>
+                    <option value="igann_interactive">IGANN interactive</option>
+                  </select>
+                </label>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Center shapes</span>
+                  <label className={styles.toggleLabel}>
+                    <input
+                      className={styles.toggleInput}
+                      type="checkbox"
+                      checked={centerShapes}
+                      onChange={(event) => setCenterShapes(event.target.checked)}
+                    />
+                    <span className={styles.toggleTrack}>
+                      <span className={styles.toggleThumb} />
+                    </span>
+                    <span className={styles.toggleText}>Enforce E[fj(Xj)] = 0</span>
+                  </label>
+                </label>
+                <label className={styles.field}>
                   <span className={styles.fieldLabel}>Points</span>
                   <input
                     className={styles.input}
                     type="number"
                     step="1"
                     min="2"
-                    max="200"
+                    max="250"
                     value={points}
                     onChange={(event) => setPoints(Number(event.target.value))}
                   />

@@ -8,7 +8,7 @@ def main() -> None:
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     defaults = {
         "seed": 3,
-        "points": 10,
+        "points": 250,
     }
     datasets = ["bike_hourly", "breast_cancer"]
     for dataset in datasets:

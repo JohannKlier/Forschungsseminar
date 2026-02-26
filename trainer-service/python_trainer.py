@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import numpy as np
 import pandas as pd
-from igann import IGANN_interactive
+from igann import IGANN, IGANN_interactive
 from sklearn.model_selection import train_test_split
 
 from adult_preprocessing import preprocess_adult_income
@@ -31,14 +31,23 @@ app = FastAPI()
 
 class TrainRequest(BaseModel):
     dataset: str
+    model_type: str = "igann"
+    center_shapes: bool = False
     seed: int = 3
-    points: int | None = 100
+    points: int | None = 250
     n_estimators: int = 100
     boost_rate: float = 0.1
     init_reg: float = 1
     elm_alpha: float = 1
     early_stopping: int = 50
     scale_y: bool = True
+
+
+class RefitRequest(TrainRequest):
+    partials: List[Dict]
+    locked_features: List[str] = []
+    refit_estimators: int = 50
+    refit_early_stopping: int | None = None
 
 
 def _to_jsonable(obj):
@@ -111,6 +120,48 @@ def evaluate_contribs(
     return interpolate_numeric(feat_values, xs, ys)
 
 
+def normalize_numeric_shape_points(shape_functions: Dict, feature_keys: List[str], cat_info: Dict, num_points: int) -> Dict:
+    """
+    Ensure numeric shape functions use exactly ``num_points`` knots for stable frontend behavior.
+    Categorical shape functions are kept unchanged.
+    """
+    normalized: Dict = {}
+    for key in feature_keys:
+        shape_fn = shape_functions.get(key, {})
+        if not shape_fn:
+            normalized[key] = shape_fn
+            continue
+        if key in cat_info or shape_fn.get("datatype") == "categorical":
+            normalized[key] = shape_fn
+            continue
+
+        xs_raw = [float(v) for v in (shape_fn.get("x") or [])]
+        ys_raw = [float(v) for v in (shape_fn.get("y") or [])]
+        pair_count = min(len(xs_raw), len(ys_raw))
+        if pair_count == 0:
+            normalized[key] = shape_fn
+            continue
+
+        pairs = sorted(zip(xs_raw[:pair_count], ys_raw[:pair_count]), key=lambda p: p[0])
+        xs_sorted = [p[0] for p in pairs]
+        ys_sorted = [p[1] for p in pairs]
+        min_x, max_x = xs_sorted[0], xs_sorted[-1]
+
+        if num_points <= 1:
+            target_x = [min_x]
+        else:
+            target_x = np.linspace(min_x, max_x, num_points).tolist()
+        target_y = interpolate_numeric(target_x, xs_sorted, ys_sorted)
+
+        normalized[key] = {
+            **shape_fn,
+            "datatype": "numerical",
+            "x": target_x,
+            "y": target_y,
+        }
+    return normalized
+
+
 @app.post("/train")
 def train(request: TrainRequest):
     # Entrypoint used by the frontend for training and returning editable partials.
@@ -118,12 +169,61 @@ def train(request: TrainRequest):
     return _to_jsonable(response)
 
 
-def build_train_response(request: TrainRequest):
+def _apply_edited_partials_to_interactive_model(igann_model, edited_partials: List[Dict], cat_info: Dict):
+    """Update IGANN_interactive GAM feature_dict from frontend-edited partials."""
+    if getattr(igann_model, "GAM", None) is None:
+        raise HTTPException(status_code=400, detail="Refit requires an interactive model with GAM wrapper.")
+    if not edited_partials:
+        return
+
+    updates = {}
+    for partial in edited_partials:
+        key = partial.get("key")
+        if not key:
+            continue
+
+        if key in cat_info:
+            categories = [str(v) for v in (partial.get("categories") or cat_info.get(key) or [])]
+            y_vals = [float(v) for v in (partial.get("editableY") or [])]
+            if categories and len(y_vals) != len(categories):
+                # Keep alignment deterministic for partially malformed payloads.
+                y_vals = (y_vals + [0.0] * len(categories))[: len(categories)]
+            updates[key] = {
+                "datatype": "categorical",
+                "x": categories,
+                "y": y_vals,
+            }
+        else:
+            x_vals = [float(v) for v in (partial.get("editableX") or [])]
+            y_vals = [float(v) for v in (partial.get("editableY") or [])]
+            if not x_vals or not y_vals:
+                continue
+            pair_count = min(len(x_vals), len(y_vals))
+            pairs = sorted(zip(x_vals[:pair_count], y_vals[:pair_count]), key=lambda p: p[0])
+            updates[key] = {
+                "datatype": "numerical",
+                "x": [p[0] for p in pairs],
+                "y": [p[1] for p in pairs],
+            }
+
+    if updates:
+        igann_model.GAM.update_feature_dict(updates)
+
+
+def build_train_response(
+    request: TrainRequest,
+    edited_partials: List[Dict] | None = None,
+    locked_features: List[str] | None = None,
+    refit_estimators: int = 0,
+    refit_early_stopping: int | None = None,
+):
     # Validate the dataset early to keep error responses simple and explicit.
     if request.dataset not in {"bike_hourly", "adult_income", "breast_cancer"}:
         raise HTTPException(status_code=400, detail="Only bike_hourly, adult_income, and breast_cancer are supported.")
+    model_type = request.model_type if request.model_type in {"igann", "igann_interactive"} else "igann"
+    center_shapes = bool(getattr(request, "center_shapes", False))
     # Clamp point count and hyperparameters to keep UI responsiveness predictable.
-    num_points = max(2, min(200, request.points or 10))
+    num_points = max(2, min(250, request.points or 250))
     n_estimators = max(10, min(500, request.n_estimators))
     boost_rate = max(0.01, min(1.0, request.boost_rate))
     init_reg = max(0.01, min(10.0, request.init_reg))
@@ -147,8 +247,9 @@ def build_train_response(request: TrainRequest):
     y_test = np.array(y_test_arr).astype(float).flatten()
     use_scale_y = bool(request.scale_y) if task_type == "regression" else False
 
-    # IGANN interactive wrapper can compress to GAM and generate editable points.
-    igann = IGANN_interactive(
+    # Train either base IGANN or IGANN_interactive based on frontend selection.
+    model_cls = IGANN_interactive if model_type == "igann_interactive" else IGANN
+    igann = model_cls(
         task=igann_task,
         n_estimators=n_estimators,
         boost_rate=boost_rate,
@@ -158,11 +259,35 @@ def build_train_response(request: TrainRequest):
         device="cpu",
         random_state=request.seed,
         verbose=0,
-        GAMwrapper=True,
-        GAM_detail=num_points,
         scale_y=use_scale_y,
+        **({"GAMwrapper": True, "GAM_detail": num_points} if model_type == "igann_interactive" else {}),
     )
     igann.fit(X_train_df, y_train)
+
+    if edited_partials:
+        if model_type != "igann_interactive":
+            raise HTTPException(
+                status_code=400,
+                detail="Refit from edited shape functions currently requires model_type='igann_interactive'.",
+            )
+        _apply_edited_partials_to_interactive_model(igann, edited_partials, cat_info)
+        if locked_features:
+            igann.locked_feature_names = [str(f) for f in locked_features]
+
+        can_continue = hasattr(igann, "continue_fit") and refit_estimators > 0
+        if can_continue:
+            igann.n_estimators = max(1, min(500, int(refit_estimators)))
+            if refit_early_stopping is not None:
+                igann.early_stopping = max(1, min(200, int(refit_early_stopping)))
+            igann.continue_fit(X_train_df, y_train)
+
+    if center_shapes:
+        if model_type != "igann_interactive" or not hasattr(igann, "center_shape_functions"):
+            raise HTTPException(
+                status_code=400,
+                detail="Centering shape functions currently requires model_type='igann_interactive'.",
+            )
+        igann.center_shape_functions(X_train_df, update_intercept=True)
 
     def calc_metrics(y_true, y_pred):
         # Minimal metrics for quick UI summaries.
@@ -191,10 +316,15 @@ def build_train_response(request: TrainRequest):
             features_test[cat_key] = [str(v) for v in features_test[cat_key]]
     test_len = len(X_test_df)
 
-    # Wrapper-generated feature dictionary is the single source of truth.
-    shape_functions = igann.GAM.get_feature_dict() if getattr(igann, "GAM", None) is not None else {}
+    # Shape functions come from the interactive GAM wrapper or from IGANN directly.
+    shape_functions = (
+        igann.GAM.get_feature_dict()
+        if getattr(igann, "GAM", None) is not None
+        else igann.get_shape_functions_as_dict()
+    )
     if not shape_functions:
-        raise HTTPException(status_code=500, detail="IGANN GAM wrapper did not produce shape functions.")
+        raise HTTPException(status_code=500, detail="Model did not produce shape functions.")
+    shape_functions = normalize_numeric_shape_points(shape_functions, feature_keys, cat_info, num_points)
 
     def get_shape(key: str) -> Dict:
         return shape_functions.get(key, {})
@@ -280,6 +410,8 @@ def build_train_response(request: TrainRequest):
 
     return {
         "dataset": request.dataset,
+        "model_type": model_type,
+        "center_shapes": center_shapes,
         "seed": request.seed,
         "n_estimators": n_estimators,
         "boost_rate": boost_rate,
@@ -293,12 +425,29 @@ def build_train_response(request: TrainRequest):
         "predictions": preds_train.tolist(),
         "y": y_display,
         "task": task_type,
-        "source": "igann",
+        "source": model_type,
         "trainMetrics": train_metrics,
         "testMetrics": test_metrics,
         "testPreds": preds_test.tolist(),
         "testY": y_test.tolist(),
+        "point_counts": {key: len((shape_functions.get(key) or {}).get("x", [])) for key in feature_keys},
     }
+
+
+@app.post("/refit")
+def refit(request: RefitRequest):
+    """Refit from frontend-edited shape functions and return refreshed partials/predictions."""
+    response = build_train_response(
+        request,
+        edited_partials=request.partials,
+        locked_features=request.locked_features,
+        refit_estimators=request.refit_estimators,
+        refit_early_stopping=request.refit_early_stopping,
+    )
+    response["refit_from_edits"] = True
+    response["locked_features"] = [str(f) for f in request.locked_features]
+    response["center_shapes"] = bool(request.center_shapes)
+    return _to_jsonable(response)
 
 
 @app.get("/models")
