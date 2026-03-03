@@ -93,6 +93,13 @@ def interpolate_numeric(values: List[float], xs: List[float], ys: List[float]) -
     return result
 
 
+def _coerce_numeric_points(values) -> List[float]:
+    """Normalize shape point containers without relying on ambiguous array truthiness."""
+    if values is None:
+        return []
+    return [float(v) for v in values]
+
+
 def evaluate_contribs(
     shape_fn: Dict,
     feat_values: List[float],
@@ -135,8 +142,8 @@ def normalize_numeric_shape_points(shape_functions: Dict, feature_keys: List[str
             normalized[key] = shape_fn
             continue
 
-        xs_raw = [float(v) for v in (shape_fn.get("x") or [])]
-        ys_raw = [float(v) for v in (shape_fn.get("y") or [])]
+        xs_raw = _coerce_numeric_points(shape_fn.get("x"))
+        ys_raw = _coerce_numeric_points(shape_fn.get("y"))
         pair_count = min(len(xs_raw), len(ys_raw))
         if pair_count == 0:
             normalized[key] = shape_fn
@@ -169,13 +176,10 @@ def train(request: TrainRequest):
     return _to_jsonable(response)
 
 
-def _apply_edited_partials_to_interactive_model(igann_model, edited_partials: List[Dict], cat_info: Dict):
-    """Update IGANN_interactive GAM feature_dict from frontend-edited partials."""
-    if getattr(igann_model, "GAM", None) is None:
-        raise HTTPException(status_code=400, detail="Refit requires an interactive model with GAM wrapper.")
+def build_feature_dict_from_partials(edited_partials: List[Dict], cat_info: Dict) -> Dict:
+    """Convert frontend partials into the IGANN interactive feature_dict format."""
     if not edited_partials:
-        return
-
+        return {}
     updates = {}
     for partial in edited_partials:
         key = partial.get("key")
@@ -205,10 +209,7 @@ def _apply_edited_partials_to_interactive_model(igann_model, edited_partials: Li
                 "x": [p[0] for p in pairs],
                 "y": [p[1] for p in pairs],
             }
-
-    if updates:
-        igann_model.GAM.update_feature_dict(updates)
-
+    return updates
 
 def build_train_response(
     request: TrainRequest,
@@ -262,24 +263,27 @@ def build_train_response(
         scale_y=use_scale_y,
         **({"GAMwrapper": True, "GAM_detail": num_points} if model_type == "igann_interactive" else {}),
     )
-    igann.fit(X_train_df, y_train)
-
     if edited_partials:
         if model_type != "igann_interactive":
             raise HTTPException(
                 status_code=400,
                 detail="Refit from edited shape functions currently requires model_type='igann_interactive'.",
             )
-        _apply_edited_partials_to_interactive_model(igann, edited_partials, cat_info)
-        if locked_features:
-            igann.locked_feature_names = [str(f) for f in locked_features]
-
-        can_continue = hasattr(igann, "continue_fit") and refit_estimators > 0
-        if can_continue:
-            igann.n_estimators = max(1, min(500, int(refit_estimators)))
-            if refit_early_stopping is not None:
-                igann.early_stopping = max(1, min(200, int(refit_early_stopping)))
-            igann.continue_fit(X_train_df, y_train)
+        feature_dict = build_feature_dict_from_partials(edited_partials, cat_info)
+        igann.fit_from_shape_functions(
+            X_train_df,
+            y_train,
+            feature_dict,
+            locked_features=locked_features,
+            refit_estimators=max(0, int(refit_estimators)),
+            refit_early_stopping=(
+                max(1, min(200, int(refit_early_stopping)))
+                if refit_early_stopping is not None
+                else None
+            ),
+        )
+    else:
+        igann.fit(X_train_df, y_train)
 
     if center_shapes:
         if model_type != "igann_interactive" or not hasattr(igann, "center_shape_functions"):

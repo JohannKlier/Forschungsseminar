@@ -1,0 +1,323 @@
+"use client";
+
+import { useState } from "react";
+import PredictionFitPlot from "../components/PredictionFitPlot";
+import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
+import SidebarPanel from "../components/SidebarPanel";
+import styles from "../page.module.css";
+import { useGamLab } from "../hooks/useGamLab";
+import { useSidebarActions } from "../hooks/useSidebarActions";
+
+export default function TrainPage() {
+  const {
+    status,
+    result,
+    datasets,
+    dataset,
+    setDataset,
+    modelType,
+    setModelType,
+    centerShapes,
+    setCenterShapes,
+    shapePoints,
+    setShapePoints,
+    seed,
+    setSeed,
+    nEstimators,
+    setNEstimators,
+    boostRate,
+    setBoostRate,
+    initReg,
+    setInitReg,
+    elmAlpha,
+    setElmAlpha,
+    earlyStopping,
+    setEarlyStopping,
+    scaleY,
+    setScaleY,
+    selectedDataset,
+    baselineKnots,
+    knots,
+    setKnots,
+    knotEdits,
+    setKnotEdits,
+    selectedKnots,
+    setSelectedKnots,
+    activePartialIdx,
+    setActivePartialIdx,
+    stats,
+    models,
+    lockedFeatures,
+    handleSave,
+    manualTrain,
+    manualRefitFromEdits,
+    toggleFeatureLock,
+    sidebarTab,
+    setSidebarTab,
+    partial,
+    displayLabel,
+    history,
+    historyCursor,
+    recordAction,
+    commitEdits,
+    undoLast,
+    redoLast,
+    deleteHistoryEntry,
+  } = useGamLab();
+
+  const { formatHistoryAction, formatHistoryDetail, applyMonotonic, addPointsInSelection } = useSidebarActions({
+    partial,
+    knotEdits,
+    knots,
+    selectedKnots,
+    setKnots,
+    setKnotEdits,
+    setSelectedKnots,
+    recordAction,
+    commitEdits,
+    history,
+    baselineKnots,
+  });
+
+  const smoothAmount = 0.5;
+  const [smoothingMode, setSmoothingMode] = useState(false);
+  const smoothingRangeMax = 32;
+
+  return (
+    <div className={styles.pageFrame}>
+      <div className={styles.page}>
+        <section className={styles.dashboard}>
+          {result ? (
+            <div className={styles.datasetBanner}>
+              <div>
+                <p className={styles.datasetLabel}>Dataset</p>
+                <p className={styles.datasetTitle}>{selectedDataset.label}</p>
+                <p className={styles.datasetSummary}>{selectedDataset.summary}</p>
+              </div>
+              <a className={styles.selectModelButton} href="/">
+                Choose another model
+              </a>
+            </div>
+          ) : null}
+          <section className={styles.panel}>
+            <div className={styles.panelHeader}>
+              <div className={styles.panelTitleRow}>
+                <div>
+                  <p className={styles.panelEyebrow}>Training</p>
+                  <h2 className={styles.panelTitle}>Hyperparameters</h2>
+                </div>
+                <div className={styles.panelActions}>
+                  <button
+                    type="button"
+                    className={styles.panelButton}
+                    onClick={() => manualRefitFromEdits()}
+                    disabled={status === "loading" || !result || modelType !== "igann_interactive"}
+                  >
+                    {status === "loading" ? "Refitting..." : "Refit from edits"}
+                  </button>
+                  <button
+                    type="button"
+                    className={styles.panelButton}
+                    onClick={() => manualTrain()}
+                    disabled={status === "loading"}
+                  >
+                    {status === "loading" ? "Training..." : "Train model"}
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className={styles.controlGrid}>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Dataset</span>
+                <select
+                  className={styles.datasetSelect}
+                  value={dataset}
+                  onChange={(event) => setDataset(event.target.value)}
+                >
+                  {datasets.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Model</span>
+                <select
+                  className={styles.datasetSelect}
+                  value={modelType}
+                  onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
+                >
+                  <option value="igann">IGANN</option>
+                  <option value="igann_interactive">IGANN interactive</option>
+                </select>
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Center shapes</span>
+                <label className={styles.toggleLabel}>
+                  <input
+                    className={styles.toggleInput}
+                    type="checkbox"
+                    checked={centerShapes}
+                    disabled={modelType !== "igann_interactive"}
+                    onChange={(event) => setCenterShapes(event.target.checked)}
+                  />
+                  <span className={styles.toggleTrack}>
+                    <span className={styles.toggleThumb} />
+                  </span>
+                  <span className={styles.toggleText}>Enforce E[fj(Xj)] = 0</span>
+                </label>
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Points</span>
+                <input
+                  className={styles.datasetSelect}
+                  type="number"
+                  step="1"
+                  min="2"
+                  max="250"
+                  value={shapePoints}
+                  onChange={(event) => setShapePoints(Number(event.target.value))}
+                />
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Seed</span>
+                <input
+                  className={styles.datasetSelect}
+                  type="number"
+                  step="1"
+                  min="0"
+                  max="9999"
+                  value={seed}
+                  onChange={(event) => setSeed(Number(event.target.value))}
+                />
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Estimators</span>
+                <input
+                  className={styles.datasetSelect}
+                  type="number"
+                  step="1"
+                  min="10"
+                  max="500"
+                  value={nEstimators}
+                  onChange={(event) => setNEstimators(Number(event.target.value))}
+                />
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Boost rate</span>
+                <input
+                  className={styles.datasetSelect}
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="1"
+                  value={boostRate}
+                  onChange={(event) => setBoostRate(Number(event.target.value))}
+                />
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Init reg</span>
+                <input
+                  className={styles.datasetSelect}
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="10"
+                  value={initReg}
+                  onChange={(event) => setInitReg(Number(event.target.value))}
+                />
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>ELM alpha</span>
+                <input
+                  className={styles.datasetSelect}
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  max="10"
+                  value={elmAlpha}
+                  onChange={(event) => setElmAlpha(Number(event.target.value))}
+                />
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Early stopping</span>
+                <input
+                  className={styles.datasetSelect}
+                  type="number"
+                  step="1"
+                  min="5"
+                  max="200"
+                  value={earlyStopping}
+                  onChange={(event) => setEarlyStopping(Number(event.target.value))}
+                />
+              </label>
+              <label className={styles.sliderLabel}>
+                <span className={styles.controlLabel}>Scale target</span>
+                <label className={styles.toggleLabel}>
+                  <input
+                    className={styles.toggleInput}
+                    type="checkbox"
+                    checked={scaleY}
+                    onChange={(event) => setScaleY(event.target.checked)}
+                  />
+                  <span className={styles.toggleTrack}>
+                    <span className={styles.toggleThumb} />
+                  </span>
+                  <span className={styles.toggleText}>Normalize y for training</span>
+                </label>
+              </label>
+            </div>
+          </section>
+          {result ? (
+            <>
+              <ShapeFunctionsPanel
+                result={result}
+                baselineKnots={baselineKnots}
+                knots={knots}
+                setKnots={setKnots}
+                knotEdits={knotEdits}
+                setKnotEdits={setKnotEdits}
+                selectedKnots={selectedKnots}
+                setSelectedKnots={setSelectedKnots}
+                activePartialIdx={activePartialIdx}
+                setActivePartialIdx={setActivePartialIdx}
+                lockedFeatures={lockedFeatures}
+                onToggleFeatureLock={toggleFeatureLock}
+                onRecordAction={recordAction}
+                onCommitEdits={commitEdits}
+                applyMonotonic={applyMonotonic}
+                addPointsInSelection={addPointsInSelection}
+                smoothAmount={smoothAmount}
+                smoothingMode={smoothingMode}
+                setSmoothingMode={setSmoothingMode}
+                smoothingRangeMax={smoothingRangeMax}
+              />
+              {models ? <PredictionFitPlot result={result} models={models} /> : null}
+              {partial ? (
+                <SidebarPanel
+                  sidebarTab={sidebarTab}
+                  setSidebarTab={setSidebarTab}
+                  displayLabel={displayLabel}
+                  partial={partial}
+                  onUndo={undoLast}
+                  canUndo={historyCursor > 0}
+                  onRedo={redoLast}
+                  canRedo={historyCursor < history.length}
+                  stats={stats}
+                  history={history}
+                  formatHistoryAction={formatHistoryAction}
+                  formatHistoryDetail={formatHistoryDetail}
+                  onDeleteHistoryEntry={deleteHistoryEntry}
+                  onSave={handleSave}
+                />
+              ) : null}
+            </>
+          ) : (
+            <div className={styles.placeholder}>Press "Train model" to load shapes.</div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
