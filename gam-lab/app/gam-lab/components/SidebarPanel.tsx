@@ -1,41 +1,93 @@
-import { Dispatch, SetStateAction } from "react";
+import { Dispatch, SetStateAction, useEffect, useRef } from "react";
 import styles from "../page.module.css";
-import { FeatureCurve, StatItem } from "../types";
+import { StatItem } from "../types";
 
 type HistoryEntry = { featureKey: string; action: string; ts: number; changes: { x: number; before?: number; after?: number; delta?: number }[] };
+
+function HistoryPanel({
+  history,
+  formatHistoryAction,
+  formatHistoryDetail,
+  onDeleteHistoryEntry,
+}: {
+  history: HistoryEntry[];
+  formatHistoryAction: (action: string) => string;
+  formatHistoryDetail: (entryIndex: number) => string | null;
+  onDeleteHistoryEntry: (index: number) => void;
+}) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [history.length]);
+
+  // Group entries by featureKey, preserving insertion order of first occurrence.
+  const groups: { featureKey: string; entries: { entry: HistoryEntry; index: number }[] }[] = [];
+  const groupIdx: Record<string, number> = {};
+  history.forEach((entry, index) => {
+    if (groupIdx[entry.featureKey] === undefined) {
+      groupIdx[entry.featureKey] = groups.length;
+      groups.push({ featureKey: entry.featureKey, entries: [] });
+    }
+    groups[groupIdx[entry.featureKey]].entries.push({ entry, index });
+  });
+
+  return (
+    <div className={styles.historyScroll}>
+      <p className={styles.settingsLabel}>History</p>
+      <div className={styles.historyList}>
+        {groups.length ? groups.map(({ featureKey, entries }) => (
+          <div key={featureKey} className={styles.historyGroup}>
+            <div className={styles.historyGroupHeader}>
+              <span className={styles.historyGroupLabel}>{featureKey}</span>
+              <span className={styles.historyGroupCount}>{entries.length}</span>
+            </div>
+            {entries.map(({ entry, index }) => (
+              <div key={`${entry.ts}-${entry.action}`} className={styles.historyItem}>
+                <div className={styles.historyActionRow}>
+                  <span className={styles.settingsValue}>{formatHistoryAction(entry.action)}</span>
+                  <button
+                    type="button"
+                    className={styles.historyDeleteButton}
+                    onClick={() => onDeleteHistoryEntry(index)}
+                    aria-label="Delete history entry"
+                  >
+                    ×
+                  </button>
+                </div>
+                {formatHistoryDetail(index) ? (
+                  <span className={styles.historyDetail}>{formatHistoryDetail(index)}</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )) : (
+          <p className={styles.settingsHint}>No actions yet.</p>
+        )}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
 
 type Props = {
   sidebarTab: "edit" | "history";
   setSidebarTab: Dispatch<SetStateAction<"edit" | "history">>;
-  displayLabel: string;
-  partial: FeatureCurve;
-  onUndo: () => void;
-  canUndo: boolean;
-  onRedo: () => void;
-  canRedo: boolean;
   stats: StatItem[] | null;
   history: HistoryEntry[];
   formatHistoryAction: (action: string) => string;
   formatHistoryDetail: (entryIndex: number) => string | null;
   onDeleteHistoryEntry: (index: number) => void;
-  onSave: () => void;
 };
 
 export default function SidebarPanel({
   sidebarTab,
   setSidebarTab,
-  displayLabel,
-  partial,
-  onUndo,
-  canUndo,
-  onRedo,
-  canRedo,
   stats,
   history,
   formatHistoryAction,
   formatHistoryDetail,
   onDeleteHistoryEntry,
-  onSave,
 }: Props) {
   return (
     <div className={styles.settingsRail}>
@@ -61,28 +113,21 @@ export default function SidebarPanel({
       {sidebarTab === "edit" ? (
         <>
           <div className={styles.settingsSection}>
-            <p className={styles.settingsLabel}>Selected feature</p>
-            <div className={styles.settingsItem}>
-              <span className={styles.settingsHint}>Feature</span>
-              <span className={styles.settingsValue}>{displayLabel}</span>
-            </div>
-          </div>
-          <div className={styles.settingsSection}>
-            <p className={styles.settingsLabel}>Edits</p>
-            <div className={styles.undoRow}>
-              <button type="button" className={styles.undoButton} onClick={onUndo} disabled={!canUndo}>
-                ← Undo
-              </button>
-              <button type="button" className={styles.undoButton} onClick={onRedo} disabled={!canRedo}>
-                Redo →
-              </button>
-              <button className={styles.undoButton} onClick={onSave} disabled={!partial}>
-                Save edits
-              </button>
-            </div>
-          </div>
-          <div className={styles.settingsSection}>
             <p className={styles.settingsLabel}>Stats</p>
+            <div className={styles.statsLegend}>
+              <span className={styles.statsLegendItem}>
+                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchInitial}`} />
+                Initial
+              </span>
+              <span className={styles.statsLegendItem}>
+                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchLatest}`} />
+                Latest
+              </span>
+              <span className={styles.statsLegendItem}>
+                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchCurrent}`} />
+                Current
+              </span>
+            </div>
             {stats?.map((stat) => {
             if (stat.kind === "value") {
               return (
@@ -92,31 +137,46 @@ export default function SidebarPanel({
                 </div>
               );
             }
-            const base = stat.base ?? null;
-            const current = stat.current ?? null;
+            const { initial, latest, current } = stat;
             const format = stat.format ?? "0.000";
             const digits = format.includes("0.00") ? 2 : 3;
-            const baseLabel = Number.isFinite(base) ? (base as number).toFixed(digits) : "—";
-            const currentLabel = Number.isFinite(current) ? (current as number).toFixed(digits) : "—";
-            const maxVal = Math.max(Math.abs(base ?? 0), Math.abs(current ?? 0), 1e-6);
-            const baseWidth = Number.isFinite(base) ? `${(Math.abs(base as number) / maxVal) * 100}%` : "0%";
-            const currentWidth = Number.isFinite(current) ? `${(Math.abs(current as number) / maxVal) * 100}%` : "0%";
+            const fmt = (v: number | null) => (Number.isFinite(v) ? (v as number).toFixed(digits) : "—");
+            const maxVal = Math.max(Math.abs(initial ?? 0), Math.abs(latest ?? 0), Math.abs(current ?? 0), 1e-6);
+            const pct = (v: number | null) =>
+              Number.isFinite(v) ? `${(Math.abs(v as number) / maxVal) * 100}%` : "0%";
             return (
               <div key={stat.label} className={styles.statsBarRow}>
                 <div className={styles.statsBarHeader}>
                   <span className={styles.settingsHint}>{stat.label}</span>
                 </div>
-                <div className={styles.statsBarTrack}>
-                  <div className={styles.statsBar}>
-                    <div className={styles.statsBarValue} style={{ width: baseWidth }}>
-                      <span className={styles.statsBarNumber}>{baseLabel}</span>
+                <div className={styles.statsMetricRows}>
+                  {initial !== null ? (
+                    <div className={styles.statsMetricRow}>
+                      <div className={styles.statsBar}>
+                        <div className={`${styles.statsBarValue} ${styles.statsBarValueInitial}`} style={{ width: pct(initial) }}>
+                          <span className={styles.statsBarNumber}>{fmt(initial)}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <div className={styles.statsBar}>
-                    <div className={`${styles.statsBarValue} ${styles.statsBarValueCurrent}`} style={{ width: currentWidth }}>
-                      <span className={styles.statsBarNumber}>{currentLabel}</span>
+                  ) : null}
+                  {latest !== null ? (
+                    <div className={styles.statsMetricRow}>
+                      <div className={styles.statsBar}>
+                        <div className={`${styles.statsBarValue} ${styles.statsBarValueLatest}`} style={{ width: pct(latest) }}>
+                          <span className={styles.statsBarNumber}>{fmt(latest)}</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
+                  {current !== null ? (
+                    <div className={styles.statsMetricRow}>
+                      <div className={styles.statsBar}>
+                        <div className={`${styles.statsBarValue} ${styles.statsBarValueCurrent}`} style={{ width: pct(current) }}>
+                          <span className={styles.statsBarNumber}>{fmt(current)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             );
@@ -124,39 +184,12 @@ export default function SidebarPanel({
           </div>
         </>
       ) : (
-        <div className={styles.historyScroll}>
-          <p className={styles.settingsLabel}>History</p>
-          <div className={styles.historyList}>
-            {history.length ? (
-              [...history].reverse().map((entry, reversedIndex) => {
-                const entryIndex = history.length - 1 - reversedIndex;
-                return (
-                  <div key={`${entry.ts}-${entry.featureKey}-${entry.action}`} className={styles.historyItem}>
-                    <div className={styles.historyText}>
-                      <span className={styles.settingsHint}>{entry.featureKey}</span>
-                      <div className={styles.historyActionRow}>
-                        <span className={styles.settingsValue}>{formatHistoryAction(entry.action)}</span>
-                        <button
-                          type="button"
-                          className={styles.historyDeleteButton}
-                          onClick={() => onDeleteHistoryEntry(entryIndex)}
-                          aria-label="Delete history entry"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    </div>
-                    {formatHistoryDetail(entryIndex) ? (
-                      <span className={styles.historyDetail}>{formatHistoryDetail(entryIndex)}</span>
-                    ) : null}
-                  </div>
-                );
-              })
-            ) : (
-              <p className={styles.settingsHint}>No actions yet.</p>
-            )}
-          </div>
-        </div>
+        <HistoryPanel
+          history={history}
+          formatHistoryAction={formatHistoryAction}
+          formatHistoryDetail={formatHistoryDetail}
+          onDeleteHistoryEntry={onDeleteHistoryEntry}
+        />
       )}
     </div>
   );

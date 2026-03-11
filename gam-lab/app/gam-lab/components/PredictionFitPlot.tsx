@@ -7,9 +7,9 @@ type Props = {
 };
 
 export default function PredictionFitPlot({ result, models }: Props) {
-  if (result.task === "classification") {
+  if (result.model.task === "classification") {
     const preds = models.editedModel.preds;
-    const labels = result.y;
+    const labels = result.data.trainY;
     const threshold = 0.5;
     let tp = 0;
     let tn = 0;
@@ -101,7 +101,7 @@ export default function PredictionFitPlot({ result, models }: Props) {
           const pad = { top: 12, right: 12, bottom: 38, left: 46 };
           const usableW = width - pad.left - pad.right;
           const usableH = height - pad.top - pad.bottom;
-          const trainY = result.y;
+          const trainY = result.data.trainY;
           const trainPreds = models.editedModel.preds;
           const domainVals = [
             ...trainY,

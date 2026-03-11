@@ -1,36 +1,39 @@
 import { interpolateFeature } from "./interpolate";
-import { FeatureCurve, KnotSet } from "../types";
+import { KnotSet, ShapeFunction } from "../types";
 
 const finiteValues = (values: number[]) => values.filter((v) => Number.isFinite(v));
 
-const computeStd = (values: number[]) => {
+const computeVariance = (values: number[]) => {
   if (!values.length) return 0;
   const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-  const variance = values.reduce((sum, v) => {
+  return values.reduce((sum, v) => {
     const delta = v - mean;
     return sum + delta * delta;
   }, 0) / values.length;
-  return Math.sqrt(variance);
 };
 
-export const computeFeatureImportance = (partial: FeatureCurve, knots: KnotSet) => {
-  const scatter = Array.isArray(partial.scatterX) ? partial.scatterX : [];
-  if (partial.categories && partial.categories.length) {
-    if (scatter.length) {
+// scatterX is passed separately (from trainData.trainX[shape.key]) rather than
+// being embedded in the shape function itself.
+export const computeFeatureImportance = (shape: ShapeFunction, scatterX: number[], knots: KnotSet) => {
+  if (shape.categories && shape.categories.length) {
+    const valueByCategory = new Map<string, number>();
+    shape.categories.forEach((cat, idx) => {
+      valueByCategory.set(String(cat), knots.y[idx] ?? 0);
+    });
+    if (scatterX.length) {
       const values: number[] = [];
-      scatter.forEach((raw) => {
-        if (!Number.isFinite(raw)) return;
-        const idx = Math.round(raw);
-        if (idx < 0 || idx >= knots.y.length) return;
-        values.push(knots.y[idx] ?? 0);
+      scatterX.forEach((raw) => {
+        const key = String(raw);
+        values.push(valueByCategory.get(key) ?? 0);
       });
-      return computeStd(values);
+      return computeVariance(finiteValues(values));
     }
-    return computeStd(finiteValues(knots.y));
+    return computeVariance(finiteValues(knots.y));
   }
-  if (scatter.length) {
-    const interpolated = interpolateFeature(scatter, knots);
-    return computeStd(finiteValues(interpolated));
+  if (scatterX.length) {
+    const numericScatter = scatterX.filter((v): v is number => Number.isFinite(v));
+    const interpolated = interpolateFeature(numericScatter, knots);
+    return computeVariance(finiteValues(interpolated));
   }
-  return computeStd(finiteValues(knots.y));
+  return computeVariance(finiteValues(knots.y));
 };

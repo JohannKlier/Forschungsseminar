@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { select, type Selection } from "d3-selection";
+import "d3-transition";
 import { scaleLinear } from "d3-scale";
 import { axisBottom, axisLeft } from "d3-axis";
 import { line as d3Line, curveLinear } from "d3-shape";
@@ -9,14 +10,23 @@ import { zoom, zoomIdentity, type ZoomTransform } from "d3-zoom";
 import styles from "../page.module.css";
 import { applyBrushSelection, applyClickSelection, resolveDragSelection } from "../lib/selection";
 import { smoothSeriesGaussianReflect } from "../lib/smoothing";
+import {
+  applyCommonAxisStyles,
+  ZERO_LINE_DASH,
+  ZERO_LINE_STROKE,
+  styleDensityBars,
+  styleDensityLabel,
+} from "../lib/plotStyle";
 
 type Props = {
   knots: { x: number[]; y: number[] };
   baseline?: { x: number[]; y: number[] };
+  fixedLines?: Array<{ id: string; knots: { x: number[]; y: number[] } }>;
   scatterX: number[];
   onKnotChange: (next: { x: number[]; y: number[] }) => void;
   onDragStart?: (snapshot: { x: number[]; y: number[] }) => void;
   onDragEnd?: (snapshot: { x: number[]; y: number[] }) => void;
+  onSmoothStart?: () => void;
   onSmoothEnd?: (start: { x: number[]; y: number[] }, end: { x: number[]; y: number[] }) => void;
   title: string;
   selected: number[];
@@ -34,14 +44,19 @@ type KnotDatum = { x: number; y: number; idx: number };
 const PADDING = { top: 16, right: 16, bottom: 72, left: 56 };
 const HEIGHT = 560;
 const SHOW_KNOT_MARKERS = false;
+const HIT_SIZE = 20;
+
+const cloneKnots = (value: { x: number[]; y: number[] }) => ({ x: [...value.x], y: [...value.y] });
 
 export default function VisxShapeEditor({
   knots,
   baseline,
+  fixedLines = [],
   scatterX,
   onKnotChange,
   onDragStart,
   onDragEnd,
+  onSmoothStart,
   onSmoothEnd,
   title,
   selected,
@@ -56,6 +71,9 @@ export default function VisxShapeEditor({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [width, setWidth] = useState(0);
+  const [fixedSnapshots, setFixedSnapshots] = useState<Array<{ id: string; knots: { x: number[]; y: number[] } }>>(() =>
+    fixedLines.map((line) => ({ id: line.id, knots: cloneKnots(line.knots) }))
+  );
   const yDomainRef = useRef<{ min: number; max: number } | null>(null);
   const lastFeatureRef = useRef<string | null>(null);
   const baselineSigRef = useRef<string>("");
@@ -84,8 +102,12 @@ export default function VisxShapeEditor({
   const onKnotChangeRef = useRef(onKnotChange);
   const onDragStartRef = useRef(onDragStart);
   const onDragEndRef = useRef(onDragEnd);
+  const onSmoothStartRef = useRef(onSmoothStart);
   const onSmoothEndRef = useRef(onSmoothEnd);
   const knotsRef = useRef(knots);
+  const xScaleRef = useRef<ReturnType<typeof scaleLinear> | null>(null);
+  const yScaleRef = useRef<ReturnType<typeof scaleLinear> | null>(null);
+  const lineGenRef = useRef<ReturnType<typeof d3Line<{ x: number; y: number }>> | null>(null);
 
   // Precompute the x-density histogram used for the bottom overlay.
   const histogram = useMemo(() => {
@@ -101,13 +123,25 @@ export default function VisxShapeEditor({
     if (!Number.isFinite(minVal) || !Number.isFinite(maxVal)) {
       return { bins: [0], binStart: 0, binWidth: 1 };
     }
-    const span = maxVal - minVal || 1;
     const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
-    const rangeBins = Math.round(span * 10);
-    const sizeBins = Math.round(Math.sqrt(vals.length) * 2);
-    const binCount = clamp(Math.min(rangeBins, sizeBins), 12, 80);
-    const binWidth = span / binCount;
-    const binStart = minVal;
+    const span = maxVal - minVal || 1;
+    const finiteVals = vals.filter((v) => Number.isFinite(v));
+    const integerLike =
+      finiteVals.length > 0 &&
+      finiteVals.filter((v) => Math.abs(v - Math.round(v)) < 1e-9).length / finiteVals.length >= 0.95;
+
+    let binStart = minVal;
+    let binWidth = span / 20;
+    let binCount = 20;
+
+    if (integerLike) {
+      // For integer-like features, prefer readable integer bin widths.
+      const width = Math.max(1, Math.floor(span / 20));
+      binWidth = width;
+      binStart = Math.floor(minVal / width) * width;
+      binCount = clamp(Math.ceil((maxVal - binStart) / binWidth), 8, 120);
+    }
+
     const bins = Array.from({ length: binCount }, () => 0);
     for (let i = 0; i < vals.length; i += 1) {
       const v = vals[i];
@@ -137,9 +171,84 @@ export default function VisxShapeEditor({
     onKnotChangeRef.current = onKnotChange;
     onDragStartRef.current = onDragStart;
     onDragEndRef.current = onDragEnd;
+    onSmoothStartRef.current = onSmoothStart;
     onSmoothEndRef.current = onSmoothEnd;
     knotsRef.current = knots;
-  }, [onSelectionChange, onKnotChange, onDragStart, onDragEnd, onSmoothEnd]);
+  }, [onSelectionChange, onKnotChange, onDragStart, onDragEnd, onSmoothEnd, knots]);
+
+  useEffect(() => {
+    setFixedSnapshots(fixedLines.map((line) => ({ id: line.id, knots: cloneKnots(line.knots) })));
+  }, [featureKey, fixedLines]);
+
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    const lineGen = lineGenRef.current;
+    if (!svgEl || !lineGen) return;
+    const content = select(svgEl).select<SVGGElement>("g.shape-root");
+    if (content.empty()) return;
+    const lineLayer = content.select<SVGGElement>("g.shape-line-layer");
+    if (lineLayer.empty()) return;
+    const fixedLineData = fixedSnapshots
+      .filter((snapshot) => snapshot.knots.x.length && snapshot.knots.y.length)
+      .map((snapshot, index) => ({
+        slot: `${index}`,
+        points: snapshot.knots.x
+          .map((x, idx) => ({ x, y: snapshot.knots.y[idx] ?? 0 }))
+          .sort((a, b) => a.x - b.x),
+      }));
+    const previousPaths = lineLayer
+      .selectAll<SVGPathElement, any>("path.previous-path")
+      .data(fixedLineData, (d: { slot: string }) => d.slot)
+      .join(
+        (enter) =>
+          enter
+            .append("path")
+            .classed("previous-path", true)
+            .attr("opacity", 0)
+            .attr("d", (d: { points: { x: number; y: number }[] }) => lineGen(d.points) ?? ""),
+        (update) => update,
+        (exit) =>
+          exit
+            .transition()
+            .duration(180)
+            .attr("opacity", 0)
+            .remove()
+      )
+      .attr("fill", "none")
+      .attr("stroke", "#f6ad55")
+      .attr("stroke-width", 2.25)
+      .attr("stroke-opacity", 0.45)
+      .attr("stroke-dasharray", null);
+    previousPaths
+      .transition()
+      .duration(180)
+      .attr("opacity", 1)
+      .attr("d", (d: { points: { x: number; y: number }[] }) => lineGen(d.points) ?? "");
+    lineLayer.selectAll<SVGPathElement, any>("path.previous-path").raise();
+    lineLayer.selectAll<SVGPathElement, any>("path.shape-path").raise();
+  }, [fixedSnapshots]);
+
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const blockWheelScroll = (event: WheelEvent) => {
+      if (interactionMode !== "zoom") return;
+      event.preventDefault();
+    };
+    svgEl.addEventListener("wheel", blockWheelScroll, { passive: false });
+    return () => svgEl.removeEventListener("wheel", blockWheelScroll);
+  }, [interactionMode]);
+
+  useEffect(() => {
+    if (interactionMode !== "zoom") return;
+    smoothHoverIdxRef.current = null;
+    smoothingTargetIdxRef.current = null;
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const content = select(svgEl).select<SVGGElement>("g.shape-root");
+    if (content.empty()) return;
+    content.selectAll("rect.selection-box").style("pointer-events", "none").style("cursor", "default");
+  }, [interactionMode]);
 
   // Sync selection visuals and selection bounding box when selected indices change.
   useEffect(() => {
@@ -157,7 +266,7 @@ export default function VisxShapeEditor({
       .attr("stroke", SHOW_KNOT_MARKERS ? "#0b172a" : "none")
       .attr("stroke-width", (d: any) => (SHOW_KNOT_MARKERS ? (selectedSet.has(d.idx) ? 1.5 : 1) : 0))
       .attr("r", (d: any) => (SHOW_KNOT_MARKERS ? (selectedSet.has(d.idx) ? 6 : 5) : 0));
-    if (!isDraggingRef.current && !(smoothingMode && smoothHoverIdxRef.current != null)) {
+    if (!isDraggingRef.current && !(interactionMode !== "zoom" && smoothingMode && smoothHoverIdxRef.current != null)) {
       svg
         .selectAll<SVGCircleElement, any>("circle.knot")
         .attr("fill", (d: any) => (SHOW_KNOT_MARKERS ? (selectedSet.has(d.idx) ? "#0b6fa6" : "#0ea5e9") : "transparent"));
@@ -194,11 +303,28 @@ export default function VisxShapeEditor({
         .style("stroke", "rgba(15, 23, 42, 0.35)")
         .style("stroke-dasharray", "4 4")
         .style("pointer-events", "all");
-      if (dragBehaviour) boxSel.call(dragBehaviour as any);
+      boxSel.style("pointer-events", interactionMode === "zoom" ? "none" : "all").style("cursor", interactionMode === "zoom" ? "default" : "grab");
+      if (dragBehaviour && interactionMode !== "zoom") boxSel.call(dragBehaviour as any);
     } else {
       content.selectAll("rect.selection-box").remove();
     }
-  }, [selected, smoothingMode]);
+  }, [selected, smoothingMode, interactionMode]);
+
+  // Cheaply sync knot positions (path + circles + hitboxes) without rebuilding the full D3 scene.
+  useEffect(() => {
+    knotsRef.current = knots;
+    const svgEl = svgRef.current;
+    const yScale = yScaleRef.current;
+    const lineGen = lineGenRef.current;
+    if (!svgEl || !yScale || !lineGen) return;
+    if (isDraggingRef.current) return;
+    const sorted = knots.x.map((x, idx) => ({ x, y: knots.y[idx] ?? 0, idx })).sort((a, b) => a.x - b.x);
+    const content = select(svgEl).select<SVGGElement>("g.shape-root");
+    if (content.empty()) return;
+    content.selectAll<SVGPathElement, any>("path.shape-path").attr("d", lineGen(sorted) ?? "");
+    content.selectAll<SVGCircleElement, any>("circle.knot").attr("cy", (d: any) => yScale(knots.y[d.idx] ?? 0) as number);
+    content.selectAll<SVGRectElement, any>("rect.knot-hitbox").attr("y", (d: any) => (yScale(knots.y[d.idx] ?? 0) as number) - HIT_SIZE / 2);
+  }, [knots]);
 
   // Main D3 scene lifecycle: scales, layers, interactions, smoothing, and cursor states.
   useLayoutEffect(() => {
@@ -211,14 +337,19 @@ export default function VisxShapeEditor({
     const usableHeight = HEIGHT - PADDING.top - PADDING.bottom;
 
     const baselineSig = baseline?.y?.join(",") ?? "";
-    if (lastFeatureRef.current !== featureKey || baselineSigRef.current !== baselineSig) {
+    if (
+      lastFeatureRef.current !== featureKey ||
+      baselineSigRef.current !== baselineSig
+    ) {
       yDomainRef.current = null;
       lastFeatureRef.current = featureKey;
       baselineSigRef.current = baselineSig;
     }
 
-    const allX = [...knots.x, ...(baseline?.x ?? [])];
-    const allY = [...knots.y, ...(baseline?.y ?? [])];
+    const snapshotXs = fixedSnapshots.flatMap((snapshot) => snapshot.knots.x);
+    const snapshotYs = fixedSnapshots.flatMap((snapshot) => snapshot.knots.y);
+    const allX = [...knots.x, ...(baseline?.x ?? []), ...snapshotXs];
+    const allY = [...knots.y, ...(baseline?.y ?? []), ...snapshotYs];
     const xBounds = (() => {
       let minX = allX.length ? Math.min(...allX) : 0;
       let maxX = allX.length ? Math.max(...allX) : 1;
@@ -267,6 +398,9 @@ export default function VisxShapeEditor({
       .x((d) => xScale(d.x))
       .y((d) => yScale(d.y))
       .curve(curveLinear);
+    xScaleRef.current = xScale;
+    yScaleRef.current = yScale;
+    lineGenRef.current = lineGen;
 
     const findNearestKnotIdxAtClientX = (clientX: number): number | null => {
       if (!sortedKnots.length) return null;
@@ -426,8 +560,7 @@ export default function VisxShapeEditor({
       .classed("y-axis", true)
       .attr("transform", `translate(${PADDING.left}, 0)`)
       .call(yAxis);
-    content.selectAll(".tick line").attr("stroke", "#e2e8f0").attr("stroke-dasharray", "3 3");
-    content.selectAll(".tick text").attr("fill", "#475569").attr("font-size", 10);
+    applyCommonAxisStyles(content);
 
     content
       .selectAll<SVGLineElement, null>("line.zero-line")
@@ -438,8 +571,14 @@ export default function VisxShapeEditor({
       .attr("x2", PADDING.left + usableWidth)
       .attr("y1", yScale(0))
       .attr("y2", yScale(0))
-      .attr("stroke", "#cbd5e1")
-      .attr("stroke-dasharray", "4 4");
+      .attr("stroke", ZERO_LINE_STROKE)
+      .attr("stroke-dasharray", ZERO_LINE_DASH);
+
+    const lineLayer = content
+      .selectAll<SVGGElement, null>("g.shape-line-layer")
+      .data([null])
+      .join("g")
+      .classed("shape-line-layer", true);
 
     const sortedKnots = knots.x.map((x, idx) => ({ x, y: knots.y[idx] ?? 0, idx })).sort((a, b) => a.x - b.x);
     const avail = Math.max(8, PADDING.bottom - 8);
@@ -486,9 +625,7 @@ export default function VisxShapeEditor({
         return Math.max(0, px1 - px0);
       })
       .attr("height", (d) => (d.count / maxBin) * histMax)
-      .attr("fill", "rgba(14,165,233,0.12)")
-      .attr("stroke", "rgba(14,165,233,0.25)")
-      .attr("stroke-width", 0.5);
+      .call(styleDensityBars);
 
     content
       .selectAll<SVGTextElement, null>("text.density-label")
@@ -497,15 +634,14 @@ export default function VisxShapeEditor({
       .classed("density-label", true)
       .attr("x", PADDING.left)
       .attr("y", HEIGHT - 10)
-      .attr("fill", "#64748b")
-      .attr("font-size", 10)
+      .call(styleDensityLabel)
       .text("Density");
 
     const baseData =
       baseline?.x?.length && baseline.y?.length
         ? baseline.x.map((x, idx) => ({ x, y: baseline.y[idx] ?? 0 })).sort((a, b) => a.x - b.x)
         : [];
-    content
+    lineLayer
       .selectAll<SVGPathElement, any>("path.baseline-path")
       .data(baseData.length ? [baseData] : [])
       .join(
@@ -514,11 +650,21 @@ export default function VisxShapeEditor({
         (exit) => exit.remove()
       )
       .attr("fill", "none")
-      .attr("stroke", "#f59e0b")
+      .attr("stroke", "#94a3b8")
       .attr("stroke-width", 2.2)
       .attr("stroke-dasharray", "6 4")
       .attr("d", lineGen);
-    content
+    lineLayer
+      .selectAll<SVGPathElement, any>("path.previous-path")
+      .data([], (d: { id: string }) => d.id)
+      .join(
+        (enter) => enter.append("path").classed("previous-path", true),
+        (update) => update,
+        (exit) => exit.remove()
+      )
+      .attr("fill", "none")
+      .attr("stroke", "#f59e0b");
+    lineLayer
       .selectAll<SVGPathElement, any>("path.shape-path")
       .data([sortedKnots])
       .join(
@@ -530,6 +676,9 @@ export default function VisxShapeEditor({
       .attr("stroke", "#0ea5e9")
       .attr("stroke-width", 3)
       .attr("d", lineGen);
+    lineLayer.selectAll<SVGPathElement, any>("path.baseline-path").lower();
+    lineLayer.selectAll<SVGPathElement, any>("path.previous-path").raise();
+    lineLayer.selectAll<SVGPathElement, any>("path.shape-path").raise();
 
     const baseColor = [14, 165, 233];
     const highlightColor = [225, 29, 72];
@@ -570,7 +719,11 @@ export default function VisxShapeEditor({
         .selectAll<SVGStopElement, KnotDatum>("stop")
         .data(sortedKnots)
         .join("stop")
-        .attr("offset", (_, i) => `${(i / Math.max(1, sortedKnots.length - 1)) * 100}%`)
+        .attr("offset", (d) => {
+          const px = xScale(d.x);
+          const frac = (px - PADDING.left) / Math.max(1, usableWidth);
+          return `${Math.max(0, Math.min(100, frac * 100))}%`;
+        })
         .attr("stop-color", (d) => {
           const raw = isDrag ? dragWeightsRef.current[d.idx] : smoothWeights[d.idx];
           const w = Number.isFinite(raw) ? raw : 0;
@@ -594,7 +747,7 @@ export default function VisxShapeEditor({
           const weight = Number.isFinite(raw) ? (raw as number) : 0;
           return blendColor(weight);
         }
-        if (smoothingMode && smoothHoverIdxRef.current != null) {
+        if (interactionMode !== "zoom" && smoothingMode && smoothHoverIdxRef.current != null) {
           const raw = smoothWeightsRef.current[idx];
           const weight = Number.isFinite(raw) ? (raw as number) : 0;
           if (weight > 0) return blendColor(weight);
@@ -651,9 +804,10 @@ export default function VisxShapeEditor({
 
     const DRAG_FALLOFF_RADIUS = Math.max(0, dragFalloffRadius);
     const dragBehaviour = d3Drag<SVGCircleElement, { idx: number }>()
-      .filter(() => !smoothingMode)
+      .filter(() => interactionMode !== "zoom" && !smoothingMode)
       .on("start", (event, d) => {
         isDraggingRef.current = true;
+        setFixedSnapshots((prev) => (prev.length >= 2 ? prev.slice(1) : prev));
         const liveKnots = knotsRef.current ?? knots;
         const multi = event.sourceEvent.shiftKey || event.sourceEvent.metaKey || event.sourceEvent.ctrlKey;
         const nextSelection = d && d.idx != null
@@ -797,6 +951,10 @@ export default function VisxShapeEditor({
           const committed = { x: [...pending.x], y: [...pending.y] };
           knotsRef.current = committed;
           applyDragPreview(committed);
+          setFixedSnapshots((prev) => [
+            ...prev,
+            { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, knots: cloneKnots(committed) },
+          ].slice(-2));
           onKnotChangeRef.current(committed);
         }
         pendingDragRef.current = null;
@@ -881,8 +1039,7 @@ export default function VisxShapeEditor({
             .curve(curveLinear);
           content.selectAll<SVGGElement, null>("g.x-axis").call(axisBottom(zx).ticks(10).tickSize(6).tickPadding(8).tickSizeOuter(0) as any);
           content.selectAll<SVGGElement, null>("g.y-axis").call(axisLeft(zy).ticks(7).tickSize(-usableWidth).tickSizeOuter(0) as any);
-          content.selectAll(".tick line").attr("stroke", "#e2e8f0").attr("stroke-dasharray", "3 3");
-          content.selectAll(".tick text").attr("fill", "#475569").attr("font-size", 10);
+          applyCommonAxisStyles(content);
           content
             .selectAll<SVGLineElement, null>("line.zero-line")
             .attr("y1", zy(0))
@@ -897,6 +1054,9 @@ export default function VisxShapeEditor({
             });
           content
             .selectAll<SVGPathElement, any>("path.baseline-path")
+            .attr("d", lineGenZoom as any);
+          content
+            .selectAll<SVGPathElement, any>("path.previous-path")
             .attr("d", lineGenZoom as any);
           content
             .selectAll<SVGPathElement, any>("path.shape-path")
@@ -923,9 +1083,10 @@ export default function VisxShapeEditor({
             .classed("drag-handle", true)
             .attr("width", hitSize)
             .attr("height", hitSize)
-            .style("cursor", "grab")
+            .style("cursor", interactionMode === "zoom" ? "default" : "grab")
             .style("fill", "transparent")
             .on("click", (event, d) => {
+              if (interactionMode === "zoom") return;
               event.stopPropagation();
               const multi = event.shiftKey || event.metaKey || event.ctrlKey;
               const nextSelection = (() => {
@@ -938,14 +1099,19 @@ export default function VisxShapeEditor({
               })();
               onSelectionChangeRef.current(nextSelection);
             })
-            .on("mouseenter", (_, d) => applySmoothingHover(d.idx))
+            .on("mouseenter", (_, d) => {
+              if (interactionMode === "zoom") return;
+              applySmoothingHover(d.idx);
+            })
             .on("mouseleave", () => applySmoothingHover(null))
             .call(dragBehaviour as any),
-        (update) => update,
+        (update) => update.call(dragBehaviour as any),
         (exit) => exit.remove()
       )
       .attr("x", (d) => xScale(d.x) - hitSize / 2)
-      .attr("y", (d) => yScale(d.y) - hitSize / 2);
+      .attr("y", (d) => yScale(d.y) - hitSize / 2)
+      .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
+      .style("cursor", interactionMode === "zoom" ? "default" : "grab");
 
     knotsSel
       .join(
@@ -956,8 +1122,9 @@ export default function VisxShapeEditor({
             .classed("drag-handle", true)
             .attr("r", SHOW_KNOT_MARKERS ? 5 : 0)
             .attr("fill", SHOW_KNOT_MARKERS ? "#0ea5e9" : "transparent")
-            .style("cursor", "grab")
+            .style("cursor", interactionMode === "zoom" ? "default" : "grab")
             .on("click", (event, d) => {
+              if (interactionMode === "zoom") return;
               event.stopPropagation();
               const multi = event.shiftKey || event.metaKey || event.ctrlKey;
               const nextSelection = (() => {
@@ -971,18 +1138,26 @@ export default function VisxShapeEditor({
               onSelectionChangeRef.current(nextSelection);
             })
             .call(dragBehaviour as any),
-        (update) => update,
+        (update) => update.call(dragBehaviour as any),
         (exit) => exit.remove()
       )
-      .on("mouseenter", (_, d) => applySmoothingHover(d.idx))
+      .on("mouseenter", (_, d) => {
+        if (interactionMode === "zoom") return;
+        applySmoothingHover(d.idx);
+      })
       .on("mouseleave", () => applySmoothingHover(null))
       .attr("cx", (d) => xScale(d.x))
       .attr("cy", (d) => yScale(d.y))
       .attr("stroke", SHOW_KNOT_MARKERS ? "#0b172a" : "none")
       .attr("stroke-width", SHOW_KNOT_MARKERS ? 1 : 0)
-      .attr("r", SHOW_KNOT_MARKERS ? 5 : 0);
+      .attr("r", SHOW_KNOT_MARKERS ? 5 : 0)
+      .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
+      .style("cursor", interactionMode === "zoom" ? "default" : "grab");
 
-    svg.on("click", () => onSelectionChangeRef.current([]));
+    svg.on("click", () => {
+      if (interactionMode === "zoom") return;
+      onSelectionChangeRef.current([]);
+    });
     svg.on("mouseleave", () => applySmoothingHover(null));
 
     const smoothingLayer = content
@@ -995,18 +1170,20 @@ export default function VisxShapeEditor({
       .attr("width", usableWidth)
       .attr("height", usableHeight)
       .style("fill", "transparent")
-      .style("pointer-events", smoothingMode ? "all" : "none")
-      .style("cursor", smoothingMode ? (smoothingDragActiveRef.current ? "grabbing" : "grab") : "default");
+      .style("pointer-events", smoothingMode && interactionMode !== "zoom" ? "all" : "none")
+      .style("cursor", smoothingMode && interactionMode !== "zoom" ? (smoothingDragActiveRef.current ? "grabbing" : "grab") : "default");
 
     const smoothingDrag = d3Drag<SVGRectElement, null>()
       .filter((event) => {
         const target = event.target as Element | null;
-        return smoothingMode && !isDraggingRef.current && !target?.closest(".drag-handle");
+        return smoothingMode && interactionMode !== "zoom" && !isDraggingRef.current && !target?.closest(".drag-handle");
       })
       .on("start", (event) => {
         smoothingDragActiveRef.current = true;
+        onSmoothStartRef.current?.();
         smoothingLayer.style("cursor", "grabbing");
         svg.style("cursor", "grabbing");
+        setFixedSnapshots((prev) => (prev.length >= 2 ? prev.slice(1) : prev));
         const liveKnots = knotsRef.current ?? knots;
         smoothingLastTsRef.current = null;
         smoothingBaseRef.current = { x: [...liveKnots.x], y: [...liveKnots.y] };
@@ -1036,7 +1213,7 @@ export default function VisxShapeEditor({
       })
       .on("end", () => {
         smoothingDragActiveRef.current = false;
-        const idleCursor = smoothingMode ? "grab" : "default";
+        const idleCursor = smoothingMode && interactionMode !== "zoom" ? "grab" : "default";
         smoothingLayer.style("cursor", idleCursor);
         svg.style("cursor", idleCursor);
         smoothingTargetIdxRef.current = null;
@@ -1049,6 +1226,10 @@ export default function VisxShapeEditor({
         const preview = smoothingPreviewRef.current;
         if (preview) {
           knotsRef.current = preview;
+          setFixedSnapshots((prev) => [
+            ...prev,
+            { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, knots: cloneKnots(preview) },
+          ].slice(-2));
           onKnotChangeRef.current(preview);
           if (base && onSmoothEndRef.current) {
             onSmoothEndRef.current(base, preview);
@@ -1062,7 +1243,7 @@ export default function VisxShapeEditor({
     smoothingLayer.call(smoothingDrag as any);
     smoothingLayer
       .on("mousemove", (event) => {
-        if (!smoothingMode || smoothingDragActiveRef.current) return;
+        if (!smoothingMode || interactionMode === "zoom" || smoothingDragActiveRef.current) return;
         const nearestIdx = findNearestKnotIdxAtClientX(event.clientX);
         smoothingTargetIdxRef.current = nearestIdx;
         applySmoothingHover(nearestIdx);
@@ -1070,9 +1251,15 @@ export default function VisxShapeEditor({
       .on("mouseleave", () => applySmoothingHover(null));
     smoothingLayer.raise();
 
-    svg.style("cursor", smoothingMode ? (smoothingDragActiveRef.current ? "grabbing" : "grab") : "default");
+    svg.style("cursor", smoothingMode && interactionMode !== "zoom" ? (smoothingDragActiveRef.current ? "grabbing" : "grab") : "default");
+
+    // If a drag is in progress when this effect re-runs (e.g. due to a knots/selected
+    // prop change mid-drag), restore the in-progress drag preview so knots don't jump
+    // back to their committed positions until the drag completes.
+    if (isDraggingRef.current && pendingDragRef.current) {
+      applyDragPreview(pendingDragRef.current);
+    }
   }, [
-    knots,
     baseline,
     width,
     featureKey,
@@ -1083,7 +1270,6 @@ export default function VisxShapeEditor({
     smoothingMode,
     smoothAmount,
     smoothingRangeMax,
-    selected,
   ]);
 
   return (

@@ -1,8 +1,8 @@
 import { Dispatch, SetStateAction, useRef } from "react";
-import { FeatureCurve, KnotSet } from "../types";
+import { ShapeFunction, KnotSet } from "../types";
 
 type Params = {
-  partial: FeatureCurve | null;
+  partial: ShapeFunction | null;
   knots: KnotSet;
   knotEdits: Record<string, KnotSet>;
   selectedKnots: number[];
@@ -11,6 +11,8 @@ type Params = {
   setSelectedKnots: Dispatch<SetStateAction<number[]>>;
   onRecordAction: (featureKey: string, before: KnotSet, after: KnotSet, action?: string) => void;
   onCommitEdits: (featureKey: string, next: KnotSet) => void;
+  onInteractionStart?: () => void;
+  onInteractionEnd?: () => void;
 };
 
 export const useShapeFunctionActions = ({
@@ -23,6 +25,8 @@ export const useShapeFunctionActions = ({
   setSelectedKnots,
   onRecordAction,
   onCommitEdits,
+  onInteractionStart,
+  onInteractionEnd,
 }: Params) => {
   const dragStartRef = useRef<KnotSet | null>(null);
   const catDragStartRef = useRef<KnotSet | null>(null);
@@ -36,10 +40,12 @@ export const useShapeFunctionActions = ({
   };
 
   const handleDragStart = () => {
+    onInteractionStart?.();
     dragStartRef.current = { x: [...knots.x], y: [...knots.y] };
   };
 
   const handleDragEnd = (next: KnotSet) => {
+    onInteractionEnd?.();
     if (!partial) return;
     const start = dragStartRef.current;
     const compare = start ?? knots;
@@ -68,8 +74,15 @@ export const useShapeFunctionActions = ({
 
   const interpolateSelection = () => {
     if (!partial) return;
+    if (selectedKnots.length < 2) return;
     const current = knotEdits[partial.key] ?? knots;
-    const sel = [...selectedKnots].sort((a, b) => (current.x[a] ?? 0) - (current.x[b] ?? 0));
+    const sortedSelection = [...selectedKnots].sort((a, b) => (current.x[a] ?? 0) - (current.x[b] ?? 0));
+    const startIdx = sortedSelection[0];
+    const endIdx = sortedSelection[sortedSelection.length - 1];
+    if (startIdx == null || endIdx == null || startIdx === endIdx) return;
+    const sel = current.x
+      .map((_, idx) => idx)
+      .filter((idx) => idx >= startIdx && idx <= endIdx);
     if (sel.length < 2) return;
     const y0 = current.y[sel[0]] ?? 0;
     const y1 = current.y[sel[sel.length - 1]] ?? 0;
@@ -137,11 +150,13 @@ export const useShapeFunctionActions = ({
   };
 
   const handleCatDragStart = (featureKey: string) => {
+    onInteractionStart?.();
     const current = knotEdits[featureKey] ?? knots;
     catDragStartRef.current = { x: [...current.x], y: [...current.y] };
   };
 
   const handleCatDragEnd = (featureKey: string) => {
+    onInteractionEnd?.();
     const start = catDragStartRef.current;
     const current = catPendingRef.current ?? knotEdits[featureKey] ?? knots;
     if (start) {
@@ -152,7 +167,12 @@ export const useShapeFunctionActions = ({
     catPendingRef.current = null;
   };
 
+  const handleSmoothStart = () => {
+    onInteractionStart?.();
+  };
+
   const handleSmoothEnd = (featureKey: string, start: KnotSet, end: KnotSet) => {
+    onInteractionEnd?.();
     const changed = end.y.some((v, i) => v !== start.y[i]);
     if (!changed) return;
     const before = { x: [...start.x], y: [...start.y] };
@@ -172,6 +192,7 @@ export const useShapeFunctionActions = ({
     handleCatMultiValueChange,
     handleCatDragStart,
     handleCatDragEnd,
+    handleSmoothStart,
     handleSmoothEnd,
   };
 };

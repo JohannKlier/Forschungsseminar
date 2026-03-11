@@ -1,8 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import PredictionFitPlot from "./components/PredictionFitPlot";
 import ShapeFunctionsPanel from "./components/ShapeFunctionsPanel";
 import SidebarPanel from "./components/SidebarPanel";
 import styles from "./page.module.css";
@@ -10,6 +10,7 @@ import { useGamLab } from "./hooks/useGamLab";
 import { useSidebarActions } from "./hooks/useSidebarActions";
 
 function GamLabPageContent() {
+  const [showAdvancedTraining, setShowAdvancedTraining] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
   const rawModel = searchParams.get("model");
@@ -55,6 +56,7 @@ function GamLabPageContent() {
     setScaleY,
     selectedDataset,
     baselineKnots,
+    fixedLinesByFeature,
     knots,
     setKnots,
     knotEdits,
@@ -64,7 +66,6 @@ function GamLabPageContent() {
     activePartialIdx,
     setActivePartialIdx,
     stats,
-    models,
     lockedFeatures,
     handleSave,
     manualTrain,
@@ -73,15 +74,18 @@ function GamLabPageContent() {
     sidebarTab,
     setSidebarTab,
     partial,
-    displayLabel,
     history,
     historyCursor,
     recordAction,
     commitEdits,
+    notifyInteractionStart,
+    notifyInteractionEnd,
     undoLast,
     redoLast,
     deleteHistoryEntry,
     modelSource,
+    currentVersion,
+    trainData,
   } = useGamLab({
     initialModel,
     initialTrain: trainMode
@@ -107,10 +111,6 @@ function GamLabPageContent() {
     }
   }, [initialModel, trainMode, router]);
 
-  if (!initialModel && !trainMode) {
-    return null;
-  }
-
   const { formatHistoryAction, formatHistoryDetail, applyMonotonic, addPointsInSelection } = useSidebarActions({
     partial,
     knotEdits,
@@ -129,6 +129,10 @@ function GamLabPageContent() {
   const [smoothingMode, setSmoothingMode] = useState(false);
   const smoothingRangeMax = 32;
 
+  if (!initialModel && !trainMode) {
+    return null;
+  }
+
   return (
     <div className={styles.pageFrame}>
       <div className={styles.page}>
@@ -140,19 +144,23 @@ function GamLabPageContent() {
                 <p className={styles.datasetTitle}>{selectedDataset.label}</p>
                 <p className={styles.datasetSummary}>{selectedDataset.summary}</p>
               </div>
-              <a className={styles.selectModelButton} href="/">
+              <Link className={styles.selectModelButton} href="/">
                 Choose another model
-              </a>
+              </Link>
             </div>
             {modelSource === "train" ? (
               <section className={styles.panel}>
                 <div className={styles.panelHeader}>
-                  <div className={styles.panelTitleRow}>
-                    <div>
+                  <div className={styles.trainingHeader}>
+                    <div className={styles.trainingTitleBlock}>
                       <p className={styles.panelEyebrow}>Training</p>
                       <h2 className={styles.panelTitle}>Hyperparameters</h2>
+                      <p className={styles.trainingIntro}>
+                        Keep the defaults for a quick run. Open advanced settings only when you need to tune the
+                        model.
+                      </p>
                     </div>
-                    <div className={styles.panelActions}>
+                    <div className={styles.trainingActions}>
                       <button
                         type="button"
                         className={styles.panelButton}
@@ -176,10 +184,12 @@ function GamLabPageContent() {
                     </div>
                   </div>
                 </div>
-                <div className={styles.controlGrid}>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Dataset</span>
+
+                <div className={styles.trainingPrimaryRow}>
+                  <label className={styles.trainingField} htmlFor="gam-lab-dataset">
+                    <span className={styles.trainingFieldLabel}>Dataset</span>
                     <select
+                      id="gam-lab-dataset"
                       className={styles.datasetSelect}
                       value={dataset}
                       onChange={(event) => setDataset(event.target.value)}
@@ -191,9 +201,10 @@ function GamLabPageContent() {
                       ))}
                     </select>
                   </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Model</span>
+                  <label className={styles.trainingField} htmlFor="gam-lab-model">
+                    <span className={styles.trainingFieldLabel}>Model</span>
                     <select
+                      id="gam-lab-model"
                       className={styles.datasetSelect}
                       value={modelType}
                       onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
@@ -202,127 +213,167 @@ function GamLabPageContent() {
                       <option value="igann_interactive">IGANN interactive</option>
                     </select>
                   </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Center shapes</span>
-                    <label className={styles.toggleLabel}>
-                      <input
-                        className={styles.toggleInput}
-                        type="checkbox"
-                        checked={centerShapes}
-                        disabled={modelType !== "igann_interactive"}
-                        onChange={(event) => setCenterShapes(event.target.checked)}
-                      />
-                      <span className={styles.toggleTrack}>
-                        <span className={styles.toggleThumb} />
-                      </span>
-                      <span className={styles.toggleText}>Enforce E[fj(Xj)] = 0</span>
-                    </label>
-                  </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Points</span>
+                </div>
+
+                <div className={styles.trainingToggleRow}>
+                  <label className={styles.trainingToggleCard}>
                     <input
-                      className={styles.datasetSelect}
-                      type="number"
-                      step="1"
-                      min="2"
-                      max="250"
-                      value={shapePoints}
-                      onChange={(event) => setShapePoints(Number(event.target.value))}
+                      className={styles.toggleInput}
+                      type="checkbox"
+                      checked={centerShapes}
+                      disabled={modelType !== "igann_interactive"}
+                      onChange={(event) => setCenterShapes(event.target.checked)}
                     />
+                    <span className={styles.toggleTrack}>
+                      <span className={styles.toggleThumb} />
+                    </span>
+                    <span className={styles.trainingToggleText}>
+                      <span className={styles.trainingToggleLabel}>Center shapes</span>
+                      <span className={styles.trainingToggleHint}>Enforce E[fj(Xj)] = 0</span>
+                    </span>
                   </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Seed</span>
+                  <label className={styles.trainingToggleCard}>
                     <input
-                      className={styles.datasetSelect}
-                      type="number"
-                      step="1"
-                      min="0"
-                      max="9999"
-                      value={seed}
-                      onChange={(event) => setSeed(Number(event.target.value))}
+                      className={styles.toggleInput}
+                      type="checkbox"
+                      checked={scaleY}
+                      onChange={(event) => setScaleY(event.target.checked)}
                     />
-                  </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Estimators</span>
-                    <input
-                      className={styles.datasetSelect}
-                      type="number"
-                      step="1"
-                      min="10"
-                      max="500"
-                      value={nEstimators}
-                      onChange={(event) => setNEstimators(Number(event.target.value))}
-                    />
-                  </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Boost rate</span>
-                    <input
-                      className={styles.datasetSelect}
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      max="1"
-                      value={boostRate}
-                      onChange={(event) => setBoostRate(Number(event.target.value))}
-                    />
-                  </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Init reg</span>
-                    <input
-                      className={styles.datasetSelect}
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      max="10"
-                      value={initReg}
-                      onChange={(event) => setInitReg(Number(event.target.value))}
-                    />
-                  </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>ELM alpha</span>
-                    <input
-                      className={styles.datasetSelect}
-                      type="number"
-                      step="0.01"
-                      min="0.01"
-                      max="10"
-                      value={elmAlpha}
-                      onChange={(event) => setElmAlpha(Number(event.target.value))}
-                    />
-                  </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Early stopping</span>
-                    <input
-                      className={styles.datasetSelect}
-                      type="number"
-                      step="1"
-                      min="5"
-                      max="200"
-                      value={earlyStopping}
-                      onChange={(event) => setEarlyStopping(Number(event.target.value))}
-                    />
-                  </label>
-                  <label className={styles.sliderLabel}>
-                    <span className={styles.controlLabel}>Scale target</span>
-                    <label className={styles.toggleLabel}>
-                      <input
-                        className={styles.toggleInput}
-                        type="checkbox"
-                        checked={scaleY}
-                        onChange={(event) => setScaleY(event.target.checked)}
-                      />
-                      <span className={styles.toggleTrack}>
-                        <span className={styles.toggleThumb} />
-                      </span>
-                      <span className={styles.toggleText}>Normalize y for training</span>
-                    </label>
+                    <span className={styles.toggleTrack}>
+                      <span className={styles.toggleThumb} />
+                    </span>
+                    <span className={styles.trainingToggleText}>
+                      <span className={styles.trainingToggleLabel}>Scale target</span>
+                      <span className={styles.trainingToggleHint}>Normalize y for training</span>
+                    </span>
                   </label>
                 </div>
+
+                <div className={styles.trainingFooter}>
+                  <button
+                    type="button"
+                    className={styles.trainingAdvancedToggle}
+                    aria-expanded={showAdvancedTraining}
+                    onClick={() => setShowAdvancedTraining((current) => !current)}
+                  >
+                    {showAdvancedTraining ? "Hide advanced settings" : "Show advanced settings"}
+                    <span
+                      className={`${styles.trainingAdvancedChevron} ${
+                        showAdvancedTraining ? styles.trainingAdvancedChevronOpen : ""
+                      }`}
+                    >
+                      ▾
+                    </span>
+                  </button>
+                  {!showAdvancedTraining ? (
+                    <p className={styles.trainingCompactSummary}>
+                      Defaults: {shapePoints} points, seed {seed}, {nEstimators} estimators.
+                    </p>
+                  ) : null}
+                </div>
+
+                {showAdvancedTraining ? (
+                  <div className={styles.trainingAdvancedGrid}>
+                    <label className={styles.trainingField} htmlFor="gam-lab-points">
+                      <span className={styles.trainingFieldLabel}>Shape points</span>
+                      <input
+                        id="gam-lab-points"
+                        className={styles.datasetSelect}
+                        type="number"
+                        step="1"
+                        min="2"
+                        max="250"
+                        value={shapePoints}
+                        onChange={(event) => setShapePoints(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className={styles.trainingField} htmlFor="gam-lab-seed">
+                      <span className={styles.trainingFieldLabel}>Seed</span>
+                      <input
+                        id="gam-lab-seed"
+                        className={styles.datasetSelect}
+                        type="number"
+                        step="1"
+                        min="0"
+                        max="9999"
+                        value={seed}
+                        onChange={(event) => setSeed(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className={styles.trainingField} htmlFor="gam-lab-estimators">
+                      <span className={styles.trainingFieldLabel}>Estimators</span>
+                      <input
+                        id="gam-lab-estimators"
+                        className={styles.datasetSelect}
+                        type="number"
+                        step="1"
+                        min="10"
+                        max="500"
+                        value={nEstimators}
+                        onChange={(event) => setNEstimators(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className={styles.trainingField} htmlFor="gam-lab-boost-rate">
+                      <span className={styles.trainingFieldLabel}>Boost rate</span>
+                      <input
+                        id="gam-lab-boost-rate"
+                        className={styles.datasetSelect}
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max="1"
+                        value={boostRate}
+                        onChange={(event) => setBoostRate(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className={styles.trainingField} htmlFor="gam-lab-init-reg">
+                      <span className={styles.trainingFieldLabel}>Init reg</span>
+                      <input
+                        id="gam-lab-init-reg"
+                        className={styles.datasetSelect}
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max="10"
+                        value={initReg}
+                        onChange={(event) => setInitReg(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className={styles.trainingField} htmlFor="gam-lab-elm-alpha">
+                      <span className={styles.trainingFieldLabel}>ELM alpha</span>
+                      <input
+                        id="gam-lab-elm-alpha"
+                        className={styles.datasetSelect}
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        max="10"
+                        value={elmAlpha}
+                        onChange={(event) => setElmAlpha(Number(event.target.value))}
+                      />
+                    </label>
+                    <label className={styles.trainingField} htmlFor="gam-lab-early-stopping">
+                      <span className={styles.trainingFieldLabel}>Early stopping</span>
+                      <input
+                        id="gam-lab-early-stopping"
+                        className={styles.datasetSelect}
+                        type="number"
+                        step="1"
+                        min="5"
+                        max="200"
+                        value={earlyStopping}
+                        onChange={(event) => setEarlyStopping(Number(event.target.value))}
+                      />
+                    </label>
+                  </div>
+                ) : null}
               </section>
             ) : null}
             <ShapeFunctionsPanel
-              result={result}
+              shapes={currentVersion?.shapes ?? []}
+              trainData={trainData!}
               baselineKnots={baselineKnots}
+              fixedLinesByFeature={fixedLinesByFeature}
               knots={knots}
               setKnots={setKnots}
               knotEdits={knotEdits}
@@ -335,6 +386,13 @@ function GamLabPageContent() {
               onToggleFeatureLock={toggleFeatureLock}
               onRecordAction={recordAction}
               onCommitEdits={commitEdits}
+              onUndo={undoLast}
+              canUndo={historyCursor > 0}
+              onRedo={redoLast}
+              canRedo={historyCursor < history.length}
+              onSave={handleSave}
+              onInteractionStart={notifyInteractionStart}
+              onInteractionEnd={notifyInteractionEnd}
               applyMonotonic={applyMonotonic}
               addPointsInSelection={addPointsInSelection}
               smoothAmount={smoothAmount}
@@ -342,28 +400,20 @@ function GamLabPageContent() {
               setSmoothingMode={setSmoothingMode}
               smoothingRangeMax={smoothingRangeMax}
             />
-            {models ? <PredictionFitPlot result={result} models={models} /> : null}
             {partial ? (
               <SidebarPanel
                 sidebarTab={sidebarTab}
                 setSidebarTab={setSidebarTab}
-                displayLabel={displayLabel}
-                partial={partial}
-                onUndo={undoLast}
-                canUndo={historyCursor > 0}
-                onRedo={redoLast}
-                canRedo={historyCursor < history.length}
                 stats={stats}
                 history={history}
                 formatHistoryAction={formatHistoryAction}
                 formatHistoryDetail={formatHistoryDetail}
                 onDeleteHistoryEntry={deleteHistoryEntry}
-                onSave={handleSave}
               />
             ) : null}
           </section>
         ) : (
-          <div className={styles.placeholder}>Press "Train model" to load shapes.</div>
+          <div className={styles.placeholder}>Press &quot;Train model&quot; to load shapes.</div>
         )}
       </div>
     </div>

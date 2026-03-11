@@ -1,10 +1,10 @@
 import { Dispatch, SetStateAction } from "react";
-import { FeatureCurve, KnotSet } from "../types";
+import { ShapeFunction, KnotSet } from "../types";
 
 type HistoryEntry = { featureKey: string; action: string; ts: number; changes: { x: number; before?: number; after?: number; delta?: number }[] };
 
 type Params = {
-  partial: FeatureCurve | null;
+  partial: ShapeFunction | null;
   knotEdits: Record<string, KnotSet>;
   knots: KnotSet;
   selectedKnots: number[];

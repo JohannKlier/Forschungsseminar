@@ -27,6 +27,7 @@ export const loadSavedModel = async (name: string): Promise<TrainResponse> => {
   return (await response.json()) as TrainResponse;
 };
 
+// The payload saved is the full TrainResponse so data, model, and all versions are persisted together.
 export const saveModel = async (name: string, payload: TrainResponse): Promise<void> => {
   const response = await fetchWithFallback("/saved-models", {
     method: "POST",

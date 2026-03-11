@@ -3,43 +3,53 @@ import { interpolateFeature } from "../lib/interpolate";
 export {};
 
 self.onmessage = (event: MessageEvent) => {
-  const { result, baselineKnots, knotEdits } = event.data as {
-    result: any;
+  const { version, trainData, modelInfo, baselineKnots, knotEdits } = event.data as {
+    version: any;
+    trainData: any;
+    modelInfo: any;
     baselineKnots: Record<string, { x: number[]; y: number[] }>;
     knotEdits: Record<string, { x: number[]; y: number[] }>;
   };
-  if (!result) {
+  if (!version || !trainData) {
     self.postMessage(null);
     return;
   }
 
-  const n = result.y.length || 1;
+  const trainY: number[] = trainData.trainY ?? [];
+  const trainX: Record<string, number[]> = trainData.trainX ?? {};
+
+  const n = trainY.length || 1;
 
   const buildContribs = (knotsMap: Record<string, { x: number[]; y: number[] }>) =>
-    result.partials.map((partial: any) => {
-      const source = knotsMap[partial.key] ?? { x: partial.editableX ?? [], y: partial.editableY ?? [] };
-      if (partial.categories && partial.categories.length) {
+    version.shapes.map((shape: any) => {
+      const source = knotsMap[shape.key] ?? { x: shape.editableX ?? [], y: shape.editableY ?? [] };
+      const scatterX: any[] = trainX[shape.key] ?? [];
+      if (shape.categories && shape.categories.length) {
         const mapping = new Map<number, number>();
-        partial.categories.forEach((cat: string, idx: number) => {
+        shape.categories.forEach((_cat: string, idx: number) => {
           const yVal = source.y[idx] ?? 0;
           mapping.set(idx, yVal);
         });
-        return partial.scatterX.map((raw: any) => {
-          const idx = partial.categories?.indexOf(String(raw)) ?? -1;
+        return scatterX.map((raw: any) => {
+          const idx = shape.categories?.indexOf(String(raw)) ?? -1;
           return mapping.get(idx) ?? 0;
         });
       }
-      return interpolateFeature(partial.scatterX, source);
+      return interpolateFeature(scatterX, source);
     });
 
-  const sumTotals = (contribs: number[][]) => result.y.map((_: number, idx: number) => contribs.reduce((sum, arr) => sum + (arr[idx] ?? 0), 0));
+  const sumTotals = (contribs: number[][]) =>
+    trainY.map((_: number, idx: number) => contribs.reduce((sum, arr) => sum + (arr[idx] ?? 0), 0));
 
   const baseContribs = buildContribs(baselineKnots);
   const baseTotals = sumTotals(baseContribs);
   const baseIntercept =
-    result.intercept != null ? result.intercept : baseTotals.reduce((sum: number, totalVal: number, idx: number) => sum + (result.y[idx] - totalVal), 0) / n;
+    version.intercept != null
+      ? version.intercept
+      : baseTotals.reduce((sum: number, totalVal: number, idx: number) => sum + (trainY[idx] - totalVal), 0) / n;
+
   const applyLink = (values: number[]) => {
-    if (result.task === "classification") {
+    if (modelInfo?.task === "classification") {
       return values.map((val) => 1 / (1 + Math.exp(-val)));
     }
     return values;
@@ -56,7 +66,7 @@ self.onmessage = (event: MessageEvent) => {
   const editedContribs = buildContribs(editedKnotsMap);
   const editedTotals = sumTotals(editedContribs);
   const editedModel = buildModel(editedContribs, editedTotals);
-  const residuals = result.y.map((yVal: number, idx: number) => yVal - editedModel.preds[idx]);
+  const residuals = trainY.map((yVal: number, idx: number) => yVal - editedModel.preds[idx]);
 
   self.postMessage({ baseModel, editedModel, residuals });
 };

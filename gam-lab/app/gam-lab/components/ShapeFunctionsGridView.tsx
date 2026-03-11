@@ -1,8 +1,8 @@
 import styles from "../page.module.css";
-import { KnotSet, TrainResponse } from "../types";
+import { KnotSet, ShapeFunction } from "../types";
 
 type Props = {
-  result: TrainResponse;
+  shapes: ShapeFunction[];
   baselineKnots: Record<string, KnotSet>;
   knotEdits: Record<string, KnotSet>;
   onSelectFeature: (idx: number) => void;
@@ -39,21 +39,21 @@ const minMax = (values: number[], fallbackMin: number, fallbackMax: number) => {
   return { min, max };
 };
 
-export default function ShapeFunctionsGridView({ result, baselineKnots, knotEdits, onSelectFeature }: Props) {
+export default function ShapeFunctionsGridView({ shapes, baselineKnots, knotEdits, onSelectFeature }: Props) {
   return (
     <div className={styles.gridView}>
-      {result.partials.map((partial, idx) => {
+      {shapes.map((shape, idx) => {
         const current =
-          knotEdits[partial.key] ??
-          baselineKnots[partial.key] ?? {
-            x: partial.editableX ?? [],
-            y: partial.editableY ?? [],
+          knotEdits[shape.key] ??
+          baselineKnots[shape.key] ?? {
+            x: shape.editableX ?? [],
+            y: shape.editableY ?? [],
           };
-        const baseline = baselineKnots[partial.key] ?? current;
-        const title = partial.label || partial.key || `x${idx + 1}`;
+        const baseline = baselineKnots[shape.key] ?? current;
+        const title = shape.label || shape.key || `x${idx + 1}`;
 
-        if (partial.categories && partial.categories.length) {
-          const categories = partial.categories;
+        if (shape.categories && shape.categories.length) {
+          const categories = shape.categories;
           const currentY = categories.map((_, i) => current.y[i] ?? 0);
           const baselineY = categories.map((_, i) => baseline.y[i] ?? 0);
           const domain = minMax([...currentY, ...baselineY, 0], -1, 1);
@@ -64,7 +64,7 @@ export default function ShapeFunctionsGridView({ result, baselineKnots, knotEdit
           const zeroY = yToPx(0);
 
           return (
-            <button key={partial.key} type="button" className={styles.gridCard} onClick={() => onSelectFeature(idx)}>
+            <button key={shape.key} type="button" className={styles.gridCard} onClick={() => onSelectFeature(idx)}>
               <div className={styles.gridCardTitle}>{title}</div>
               <svg width={CHART_W} height={CHART_H} className={styles.gridChart} aria-label={title}>
                 <line x1={PAD.left} x2={CHART_W - PAD.right} y1={zeroY} y2={zeroY} className={styles.gridZeroLine} />
@@ -77,7 +77,7 @@ export default function ShapeFunctionsGridView({ result, baselineKnots, knotEdit
                   const curTop = Math.min(yToPx(curVal), zeroY);
                   const curHeight = Math.abs(yToPx(curVal) - zeroY);
                   return (
-                    <g key={`${partial.key}-${i}`}>
+                    <g key={`${shape.key}-${i}`}>
                       <rect
                         x={x + barW * 0.18}
                         y={baseTop}
@@ -117,7 +117,7 @@ export default function ShapeFunctionsGridView({ result, baselineKnots, knotEdit
         const toPolyline = (points: XYPoint[]) => points.map((p) => `${xToPx(p.x)},${yToPx(p.y)}`).join(" ");
 
         return (
-          <button key={partial.key} type="button" className={styles.gridCard} onClick={() => onSelectFeature(idx)}>
+          <button key={shape.key} type="button" className={styles.gridCard} onClick={() => onSelectFeature(idx)}>
             <div className={styles.gridCardTitle}>{title}</div>
             <svg width={CHART_W} height={CHART_H} className={styles.gridChart} aria-label={title}>
               <line

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DatasetOption, FeatureCurve, KnotSet, Models, StatItem, TrainResponse } from "../types";
+import { DatasetOption, KnotSet, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, StatItem, TrainData, TrainResponse } from "../types";
 import { loadModel, refitModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
 
@@ -16,26 +16,21 @@ const DATASETS: DatasetOption[] = [
 
 // Fixed seed keeps demos deterministic across refreshes.
 const DEFAULT_SEED = 3;
-// Temporary switch to disable local cached edit restore/persist.
-const CACHE_EDITS_ENABLED = false;
 
 // Normalize the editable knot representation for categorical vs continuous features.
-const buildEditableKnots = (partial: FeatureCurve): KnotSet => {
-  if (partial.categories && partial.categories.length) {
-    const yVals = partial.editableY?.length ? [...partial.editableY] : [];
-    const xVals = partial.categories.map((_, idx) => idx);
+const buildEditableKnots = (shape: ShapeFunction): KnotSet => {
+  if (shape.categories && shape.categories.length) {
+    const yVals = shape.editableY?.length ? [...shape.editableY] : [];
+    const xVals = shape.categories.map((_, idx) => idx);
     return { x: xVals, y: yVals };
   }
-  const base =
-    partial.editableX?.length && partial.editableY?.length
-      ? { x: [...partial.editableX], y: [...partial.editableY] }
-      : partial.gridX?.length && partial.curve?.length
-        ? { x: [...partial.gridX], y: [...partial.curve] }
-        : { x: [], y: [] };
-
-  if (base.x.length === 0 || base.y.length === 0) return { x: [], y: [] };
-  return base;
+  if (shape.editableX?.length && shape.editableY?.length) {
+    return { x: [...shape.editableX], y: [...shape.editableY] };
+  }
+  return { x: [], y: [] };
 };
+
+const cloneKnots = (knots: KnotSet): KnotSet => ({ x: [...knots.x], y: [...knots.y] });
 
 // Main state/logic hook that powers the GAM Lab page.
 type InitOptions = {
@@ -62,6 +57,7 @@ type HistoryEntry = {
   ts: number;
   changes: HistoryChange[];
 };
+type FixedLineSnapshot = { id: string; knots: KnotSet };
 
 export const useGamLab = (options: InitOptions = {}) => {
   // User-configurable training inputs.
@@ -76,43 +72,70 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [elmAlpha, setElmAlpha] = useState(1);
   const [earlyStopping, setEarlyStopping] = useState(50);
   const [scaleY, setScaleY] = useState(true);
-  // Global training/loading status and payloads.
+
+  // Global training/loading status.
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [result, setResult] = useState<TrainResponse | null>(null);
-  const [debugPayload, setDebugPayload] = useState<TrainResponse | null>(null);
   const [debugError, setDebugError] = useState<string | null>(null);
+
+  // Core separated state: model metadata, raw data, and accumulated versions.
+  const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
+  const [trainData, setTrainData] = useState<TrainData | null>(null);
+  // Versions accumulate across retrains; the latest is always versions[versions.length - 1].
+  const [versions, setVersions] = useState<ShapeFunctionVersion[]>([]);
+
   // Editing state for the current feature and its knot history.
   const [activePartialIdx, setActivePartialIdx] = useState(0);
   const [baselineKnots, setBaselineKnots] = useState<Record<string, KnotSet>>({});
   const [knots, setKnots] = useState<KnotSet>({ x: [], y: [] });
   const [knotEdits, setKnotEdits] = useState<Record<string, KnotSet>>({});
   const [committedEdits, setCommittedEdits] = useState<Record<string, KnotSet>>({});
+  const [previousCommittedEdits, setPreviousCommittedEdits] = useState<Record<string, KnotSet>>({});
   const [selectedKnots, setSelectedKnots] = useState<number[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyCursor, setHistoryCursor] = useState(0);
   const [lockedFeatures, setLockedFeatures] = useState<string[]>([]);
+
   // Derived model predictions and worker wiring.
   const [models, setModels] = useState<Models | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const workerDebounceRef = useRef<number | null>(null);
+  // Suppress worker result application while the user is dragging/interacting.
+  const isInteractingRef = useRef(false);
+  const pendingModelsRef = useRef<Models | null>(null);
+
   // Model/source selector and sidebar tab state.
   const [modelSource, setModelSource] = useState<string>("");
   const [sidebarTab, setSidebarTab] = useState<"edit" | "history">("edit");
-  const cacheLoadedRef = useRef<string | null>(null);
 
-  // Convenience selectors for the UI.
+  // Convenience: latest version and active shape.
+  const currentVersion = useMemo<ShapeFunctionVersion | null>(
+    () => versions[versions.length - 1] ?? null,
+    [versions],
+  );
+
   const selectedDataset = useMemo(() => DATASETS.find((item) => item.id === dataset) ?? DATASETS[0], [dataset]);
-  const partial = useMemo(() => (result ? result.partials[activePartialIdx] ?? result.partials[0] ?? null : null), [
-    result,
-    activePartialIdx,
-  ]);
+
+  const partial = useMemo<ShapeFunction | null>(
+    () => (currentVersion ? currentVersion.shapes[activePartialIdx] ?? currentVersion.shapes[0] ?? null : null),
+    [currentVersion, activePartialIdx],
+  );
 
   const displayLabel = useMemo(() => {
-    if (!partial || !result) return "";
-    return partial.label || partial.key || `x${(result.partials.indexOf(partial) ?? 0) + 1}`;
-  }, [partial, result]);
+    if (!partial || !currentVersion) return "";
+    return partial.label || partial.key || `x${(currentVersion.shapes.indexOf(partial) ?? 0) + 1}`;
+  }, [partial, currentVersion]);
 
-  // Trigger a fresh training run for the selected dataset and parameters.
+  // Apply a new API response: update model info, data, and append the version.
+  const applyResponse = (payload: TrainResponse, isRefit: boolean) => {
+    setModelInfo(payload.model);
+    // Data stays stable across refits of the same dataset+seed; always update on fresh train.
+    if (!isRefit) {
+      setTrainData(payload.data);
+    }
+    setVersions((prev) => (isRefit ? [...prev, payload.version] : [payload.version]));
+  };
+
+  // Trigger a fresh training run.
   const train = async (
     overrides?: {
       dataset?: string;
@@ -145,19 +168,18 @@ export const useGamLab = (options: InitOptions = {}) => {
         early_stopping: overrides?.early_stopping ?? earlyStopping,
         scale_y: overrides?.scale_y ?? scaleY,
       });
-      setResult({ ...payload, source: "service" });
-      setDebugPayload(payload);
+      applyResponse({ ...payload, source: "service" }, false);
       setStatus("idle");
     } catch (error) {
       console.warn("Trainer service unavailable.", error);
-      setResult(null);
-      setDebugPayload(null);
+      setModelInfo(null);
+      setTrainData(null);
+      setVersions([]);
       setDebugError(error instanceof Error ? error.message : "Unknown error");
       setStatus("error");
     }
   };
 
-  // Public wrapper for UI buttons.
   const manualTrain = async (
     overrides?: {
       dataset?: string;
@@ -215,7 +237,6 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   // Load a model when the selector changes.
   const handleModelSelect = async (value: string) => {
-    
     setModelSource(value);
     if (value === "train") return;
     setStatus("loading");
@@ -228,55 +249,55 @@ export const useGamLab = (options: InitOptions = {}) => {
         : isBase
           ? value.replace("model:", "")
           : value;
-      
+
       const payload = isSaved ? await loadSavedModel(name) : await loadModel(name);
-      setResult({ ...payload, source: isSaved ? "saved" : "model" });
-      setDebugPayload(payload);
-      setDataset(payload.dataset);
-      if (payload.model_type === "igann" || payload.model_type === "igann_interactive") {
-        setModelType(payload.model_type);
+      applyResponse({ ...payload, source: isSaved ? "saved" : "model" }, false);
+
+      // Restore UI parameters from stored model info.
+      setDataset(payload.model.dataset);
+      if (payload.model.model_type === "igann" || payload.model.model_type === "igann_interactive") {
+        setModelType(payload.model.model_type);
       }
-      if (typeof payload.center_shapes === "boolean") {
-        setCenterShapes(payload.center_shapes);
-      }
-      setLockedFeatures(Array.isArray(payload.locked_features) ? payload.locked_features.map(String) : []);
-      setShapePoints(payload.points ?? shapePoints);
-      if (typeof payload.seed === "number") setSeed(payload.seed);
-      if (typeof payload.n_estimators === "number") setNEstimators(payload.n_estimators);
-      if (typeof payload.boost_rate === "number") setBoostRate(payload.boost_rate);
-      if (typeof payload.init_reg === "number") setInitReg(payload.init_reg);
-      if (typeof payload.elm_alpha === "number") setElmAlpha(payload.elm_alpha);
-      if (typeof payload.early_stopping === "number") setEarlyStopping(payload.early_stopping);
-      if (typeof payload.scale_y === "boolean") setScaleY(payload.scale_y);
+      if (typeof payload.model.scale_y === "boolean") setScaleY(payload.model.scale_y);
+      setShapePoints(payload.model.points ?? shapePoints);
+      if (typeof payload.model.seed === "number") setSeed(payload.model.seed);
+      if (typeof payload.model.n_estimators === "number") setNEstimators(payload.model.n_estimators);
+      if (typeof payload.model.boost_rate === "number") setBoostRate(payload.model.boost_rate);
+      if (typeof payload.model.init_reg === "number") setInitReg(payload.model.init_reg);
+      if (typeof payload.model.elm_alpha === "number") setElmAlpha(payload.model.elm_alpha);
+      if (typeof payload.model.early_stopping === "number") setEarlyStopping(payload.model.early_stopping);
+      if (typeof payload.version.center_shapes === "boolean") setCenterShapes(payload.version.center_shapes);
+      setLockedFeatures(Array.isArray(payload.version.locked_features) ? payload.version.locked_features.map(String) : []);
       setStatus("idle");
     } catch (error) {
       console.warn("Failed to load saved model.", error);
-      setResult(null);
-      setDebugPayload(null);
+      setModelInfo(null);
+      setTrainData(null);
+      setVersions([]);
       setDebugError(error instanceof Error ? error.message : "Unknown error");
       setStatus("error");
     }
   };
 
-  // Convert the current edits into a payload compatible with the backend saver.
-  const buildSavePayload = () => {
-    if (!result) return null;
+  // Build the save payload from the current state.
+  const buildSavePayload = (): TrainResponse | null => {
+    if (!modelInfo || !trainData || !currentVersion) return null;
     const edits = committedEdits;
-    const updatedPartials = result.partials.map((partialItem) => {
-      const edit = edits[partialItem.key];
-      if (!edit) return partialItem;
-      return {
-        ...partialItem,
-        editableX: [...edit.x],
-        editableY: [...edit.y],
-      };
+    const updatedShapes = currentVersion.shapes.map((shape) => {
+      const edit = edits[shape.key];
+      if (!edit) return shape;
+      return { ...shape, editableX: [...edit.x], editableY: [...edit.y] };
     });
-    return { ...result, partials: updatedPartials };
+    return {
+      model: modelInfo,
+      data: trainData,
+      version: { ...currentVersion, shapes: updatedShapes },
+    };
   };
 
-  // Persist edits and refresh model options.
+  // Persist edits and reload.
   const handleSave = async () => {
-    if (!result) return;
+    if (!modelInfo) return;
     const baseName = `${dataset}-edited-${new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19)}`;
     const name = window.prompt("Save edited model as:", baseName);
     if (!name) return;
@@ -284,7 +305,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     if (!payload) return;
     try {
       await saveModel(name, payload);
-      const savedValue = `saved:${name.replace(/\\.json$/, "")}`;
+      const savedValue = `saved:${name.replace(/\.json$/, "")}`;
       setModelSource(savedValue);
       handleModelSelect(savedValue);
     } catch (error) {
@@ -299,7 +320,7 @@ export const useGamLab = (options: InitOptions = {}) => {
   };
 
   const manualRefitFromEdits = async () => {
-    if (!result) return;
+    if (!modelInfo || !currentVersion) return;
     if (modelType !== "igann_interactive") {
       setDebugError("Refit from edited shape functions requires model type IGANN interactive.");
       return;
@@ -310,7 +331,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     setDebugError(null);
     setModelSource("train");
     try {
-      const refitPoints = typeof result.points === "number" ? result.points : shapePoints;
+      const refitPoints = typeof modelInfo.points === "number" ? modelInfo.points : shapePoints;
       const refitPayload = await refitModel({
         dataset,
         model_type: modelType,
@@ -323,24 +344,26 @@ export const useGamLab = (options: InitOptions = {}) => {
         elm_alpha: elmAlpha,
         early_stopping: earlyStopping,
         scale_y: scaleY,
-        partials: payload.partials.map((partialItem) => ({
-          key: partialItem.key,
-          categories: partialItem.categories,
-          editableX: partialItem.editableX,
-          editableY: partialItem.editableY,
+        partials: payload.version.shapes.map((shape) => ({
+          key: shape.key,
+          categories: shape.categories,
+          editableX: shape.editableX,
+          editableY: shape.editableY,
         })),
-        refit_estimators: nEstimators,
-        refit_early_stopping: earlyStopping,
         locked_features: lockedFeatures,
       });
-      setResult({ ...refitPayload, source: "service" });
-      setDebugPayload(refitPayload);
-      setLockedFeatures(Array.isArray(refitPayload.locked_features) ? refitPayload.locked_features.map(String) : lockedFeatures);
-      if (typeof refitPayload.center_shapes === "boolean") {
-        setCenterShapes(refitPayload.center_shapes);
+      // Refit: append new version, keep existing data.
+      applyResponse({ ...refitPayload, source: "service" }, true);
+      setLockedFeatures(
+        Array.isArray(refitPayload.version.locked_features)
+          ? refitPayload.version.locked_features.map(String)
+          : lockedFeatures,
+      );
+      if (typeof refitPayload.version.center_shapes === "boolean") {
+        setCenterShapes(refitPayload.version.center_shapes);
       }
-      if (typeof refitPayload.points === "number") {
-        setShapePoints(refitPayload.points);
+      if (typeof refitPayload.model.points === "number") {
+        setShapePoints(refitPayload.model.points);
       }
       setStatus("idle");
     } catch (error) {
@@ -350,19 +373,18 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
-  // Rebuild editable knot state when a new model is loaded or trained.
+  // Rebuild editable knot state when a new version arrives.
   useEffect(() => {
     setActivePartialIdx(0);
-    if (!result) return;
-    // Use the trained model's point count; avoid resampling after training.
+    if (!currentVersion) return;
     const next: Record<string, KnotSet> = {};
-    result.partials.forEach((partialItem) => {
-      next[partialItem.key] = buildEditableKnots(partialItem);
+    currentVersion.shapes.forEach((shape) => {
+      next[shape.key] = buildEditableKnots(shape);
     });
     setBaselineKnots((prev) => {
-      // Keep the original baseline across refit iterations so "Before" always
+      // Keep original baseline across refit iterations so "Before" always
       // refers to the initial model, not only the previous refit step.
-      if (!result.refit_from_edits) return next;
+      if (!currentVersion.refit_from_edits) return next;
       const merged: Record<string, KnotSet> = {};
       Object.keys(next).forEach((key) => {
         const existing = prev[key];
@@ -371,21 +393,21 @@ export const useGamLab = (options: InitOptions = {}) => {
       });
       return merged;
     });
-    // Current view should reflect the latest model result (including refit output),
-    // while baselineKnots may stay anchored to the initial model.
     setKnotEdits(next);
     setCommittedEdits(next);
+    setPreviousCommittedEdits(next);
     setHistory([]);
     setHistoryCursor(0);
     setLockedFeatures((prev) =>
-      prev.filter((featureKey) => result.partials.some((partialItem) => partialItem.key === featureKey)),
+      prev.filter((featureKey) => currentVersion.shapes.some((s) => s.key === featureKey)),
     );
-  }, [result]);
+  }, [currentVersion]);
 
   // Update the visible knot set when switching active features.
   useEffect(() => {
-    if (!result) return;
-    const active = result.partials[activePartialIdx];
+    if (!currentVersion) return;
+    const active = currentVersion.shapes[activePartialIdx];
+    if (!active) return;
     const baseline = baselineKnots[active.key];
     const cached = active.key ? knotEdits[active.key] : undefined;
     if (cached) {
@@ -396,7 +418,7 @@ export const useGamLab = (options: InitOptions = {}) => {
       setKnots(buildEditableKnots(active));
     }
     setSelectedKnots([]);
-  }, [result, activePartialIdx, baselineKnots]);
+  }, [currentVersion, activePartialIdx, baselineKnots]);
 
   const buildChanges = (before: KnotSet, after: KnotSet) => {
     const beforeMap = new Map<number, number>();
@@ -476,7 +498,26 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   // Save a committed version used by the worker to recompute predictions.
   const commitEdits = (featureKey: string, next: KnotSet) => {
-    setCommittedEdits((prev) => ({ ...prev, [featureKey]: { x: [...next.x], y: [...next.y] } }));
+    setCommittedEdits((prev) => {
+      const previous = prev[featureKey] ?? baselineKnots[featureKey] ?? next;
+      setPreviousCommittedEdits((prevPrevious) => ({
+        ...prevPrevious,
+        [featureKey]: cloneKnots(previous),
+      }));
+      return { ...prev, [featureKey]: cloneKnots(next) };
+    });
+  };
+
+  // Interaction gate: while dragging/smoothing, buffer worker results and apply them on release.
+  const notifyInteractionStart = () => {
+    isInteractingRef.current = true;
+  };
+  const notifyInteractionEnd = () => {
+    isInteractingRef.current = false;
+    if (pendingModelsRef.current) {
+      setModels(pendingModelsRef.current);
+      pendingModelsRef.current = null;
+    }
   };
 
   const applyHistoryEntry = (
@@ -501,20 +542,28 @@ export const useGamLab = (options: InitOptions = {}) => {
     setHistoryCursor(clamped);
     setKnotEdits(rebuilt);
     setCommittedEdits(rebuilt);
-    if (result) {
-      const active = result.partials[activePartialIdx];
-      const fallback = baselineKnots[active.key] ?? { x: [], y: [] };
-      setKnots(rebuilt[active.key] ?? fallback);
+    setPreviousCommittedEdits(rebuilt);
+    if (currentVersion) {
+      const active = currentVersion.shapes[activePartialIdx];
+      const fallback = baselineKnots[active?.key ?? ""] ?? { x: [], y: [] };
+      setKnots(rebuilt[active?.key ?? ""] ?? fallback);
       setSelectedKnots([]);
     }
   };
 
   const updateFeatureEdits = (featureKey: string, next: KnotSet) => {
     setKnotEdits((prev) => ({ ...prev, [featureKey]: next }));
-    setCommittedEdits((prev) => ({ ...prev, [featureKey]: next }));
-    if (result) {
-      const active = result.partials[activePartialIdx];
-      if (active.key === featureKey) {
+    setCommittedEdits((prev) => {
+      const previous = prev[featureKey] ?? baselineKnots[featureKey] ?? next;
+      setPreviousCommittedEdits((prevPrevious) => ({
+        ...prevPrevious,
+        [featureKey]: cloneKnots(previous),
+      }));
+      return { ...prev, [featureKey]: cloneKnots(next) };
+    });
+    if (currentVersion) {
+      const active = currentVersion.shapes[activePartialIdx];
+      if (active?.key === featureKey) {
         setKnots(next);
         setSelectedKnots([]);
       }
@@ -530,7 +579,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     setHistoryCursor(direction === "undo" ? entryIndex : entryIndex + 1);
   };
 
-  // Undo/redo apply per-feature patches without replaying full history.
   const undoLast = () => {
     if (historyCursor <= 0) return;
     applyHistoryStep(historyCursor - 1, "undo");
@@ -541,17 +589,21 @@ export const useGamLab = (options: InitOptions = {}) => {
     applyHistoryStep(historyCursor, "redo");
   };
 
-  // Remove a single history entry by its array index.
   const deleteHistoryEntry = (index: number) => {
-    const nextHistory = history.filter((_, i) => i !== index);
-    const nextCursor = historyCursor > index ? historyCursor - 1 : historyCursor;
+    const featureKey = history[index]?.featureKey;
+    // Remove the entry and all subsequent entries for the same feature.
+    const nextHistory = history.filter((e, i) => i !== index && !(i > index && e.featureKey === featureKey));
+    const removed = history.length - nextHistory.length;
+    const nextCursor = Math.max(0, historyCursor - (historyCursor > index ? removed : 0));
     setHistory(nextHistory);
     applyHistoryCursor(nextCursor, nextHistory);
   };
 
   // Background worker keeps prediction plots responsive during edits.
+  // Passes trainData and currentVersion separately so the worker can use
+  // trainX for scatter/contributions and intercept from the version.
   useEffect(() => {
-    if (!result) {
+    if (!currentVersion || !trainData) {
       setModels(null);
       return;
     }
@@ -559,22 +611,36 @@ export const useGamLab = (options: InitOptions = {}) => {
     if (!workerRef.current) {
       workerRef.current = new Worker(new URL("../workers/modelWorker.ts", import.meta.url));
       workerRef.current.onmessage = (e) => {
-        setModels(e.data);
+        if (isInteractingRef.current) {
+          pendingModelsRef.current = e.data;
+        } else {
+          setModels(e.data);
+        }
       };
     }
     if (workerDebounceRef.current) {
       window.clearTimeout(workerDebounceRef.current);
     }
     workerDebounceRef.current = window.setTimeout(() => {
-      workerRef.current?.postMessage({ result, baselineKnots, knotEdits: committedEdits });
+      workerRef.current?.postMessage({
+        version: currentVersion,
+        trainData,
+        modelInfo,
+        baselineKnots,
+        knotEdits: committedEdits,
+      });
     }, 120);
     return () => {};
-  }, [result, baselineKnots, committedEdits]);
+  }, [currentVersion, trainData, modelInfo, baselineKnots, committedEdits]);
 
-  // Compute dashboard metrics from the latest model predictions.
+  // Compute dashboard metrics showing 3 bars: initial / latest / current.
+  // initial  = server-computed metrics from the very first training run (versions[0])
+  // latest   = server-computed metrics from the most recent train/refit (currentVersion)
+  // current  = live frontend metrics recalculated from edited knots via worker
   const stats = useMemo<StatItem[] | null>(() => {
-    if (!result || !models) return null;
+    if (!modelInfo || !trainData || !models || !currentVersion) return null;
     const items: StatItem[] = [];
+
     const buildPairs = (yTrue: number[], yPred: number[]) =>
       yTrue
         .map((y, i) => ({ y, p: yPred[i] }))
@@ -597,11 +663,9 @@ export const useGamLab = (options: InitOptions = {}) => {
       if (!pairs.length) return null;
       const yBin = pairs.map((pair) => (pair.y >= 0.5 ? 1 : 0));
       const pBin = pairs.map((pair) => (pair.p >= 0.5 ? 1 : 0));
-      const correct = yBin.reduce((s, v, i) => s + (v === pBin[i] ? 1 : 0), 0);
+      const correct = yBin.reduce((s: number, v, i) => s + (v === pBin[i] ? 1 : 0), 0);
       const acc = correct / yBin.length;
-      let tp = 0;
-      let fp = 0;
-      let fn = 0;
+      let tp = 0; let fp = 0; let fn = 0;
       yBin.forEach((v, i) => {
         const p = pBin[i];
         if (v === 1 && p === 1) tp += 1;
@@ -614,173 +678,79 @@ export const useGamLab = (options: InitOptions = {}) => {
       return { acc, precision, recall, f1, count: yBin.length };
     };
 
-    const isClassification = result.task === "classification";
+    const isClassification = modelInfo.task === "classification";
     const makeBarItem = (
       label: string,
-      base: number | null,
+      initial: number | null,
+      latest: number | null,
       current: number | null,
       lowerIsBetter = false,
       format = "0.000",
-    ): StatItem => ({
-      label,
-      kind: "bar",
-      base,
-      current,
-      lowerIsBetter,
-      format,
-    });
-
+    ): StatItem => ({ label, kind: "bar", initial, latest, current, lowerIsBetter, format });
     const makeValueItem = (label: string, value: string): StatItem => ({ label, kind: "value", value });
 
-    const basePreds = Array.isArray(result.predictions) ? result.predictions : models.baseModel.preds;
-    const baseMetric = isClassification ? calcClassification(result.y, basePreds) : calcRegression(result.y, basePreds);
-    const editedMetric = isClassification
-      ? calcClassification(result.y, models.editedModel.preds)
-      : calcRegression(result.y, models.editedModel.preds);
-    if (baseMetric && editedMetric) {
-      if (isClassification && "acc" in baseMetric && "acc" in editedMetric) {
-        items.push(makeBarItem("Accuracy", baseMetric.acc, editedMetric.acc));
-        items.push(makeBarItem("F1", baseMetric.f1, editedMetric.f1));
-        items.push(makeBarItem("Precision", baseMetric.precision, editedMetric.precision));
-        items.push(makeBarItem("Recall", baseMetric.recall, editedMetric.recall));
-        items.push(makeValueItem("n", baseMetric.count.toString()));
-      } else if (!isClassification && "rmse" in baseMetric && "rmse" in editedMetric) {
-        items.push(makeBarItem("RMSE", baseMetric.rmse, editedMetric.rmse, true));
-        items.push(makeBarItem("MAE", baseMetric.mae, editedMetric.mae, true));
-        items.push(makeBarItem("R²", baseMetric.r2, editedMetric.r2));
-        items.push(makeValueItem("n", baseMetric.count.toString()));
+    // Server metrics from first and latest versions.
+    const initialVersion = versions[0];
+    const initTrain = initialVersion?.trainMetrics;
+    const latestTrain = currentVersion.trainMetrics;
+
+    // Live frontend metrics from worker (edited knots applied).
+    const liveMetric = isClassification
+      ? calcClassification(trainData.trainY, models.editedModel.preds)
+      : calcRegression(trainData.trainY, models.editedModel.preds);
+
+    const n = liveMetric?.count ?? initTrain?.count ?? latestTrain?.count ?? 0;
+
+    if (isClassification) {
+      const initAcc = initTrain?.acc ?? null;
+      const latestAcc = latestTrain?.acc ?? null;
+      const curAcc = liveMetric && "acc" in liveMetric ? liveMetric.acc : null;
+      items.push(makeBarItem("Accuracy", initAcc, latestAcc, curAcc));
+      if (liveMetric && "f1" in liveMetric) {
+        items.push(makeBarItem("F1", null, null, liveMetric.f1));
+        items.push(makeBarItem("Precision", null, null, liveMetric.precision));
+        items.push(makeBarItem("Recall", null, null, liveMetric.recall));
       }
+    } else {
+      const initRmse = initTrain?.rmse ?? null;
+      const latestRmse = latestTrain?.rmse ?? null;
+      const curRmse = liveMetric && "rmse" in liveMetric ? liveMetric.rmse : null;
+      const initMae = initTrain?.mae ?? null;
+      const latestMae = latestTrain?.mae ?? null;
+      const initR2 = initTrain?.r2 ?? null;
+      const latestR2 = latestTrain?.r2 ?? null;
+      const curR2 = liveMetric && "r2" in liveMetric ? liveMetric.r2 : null;
+      const curMae = liveMetric && "mae" in liveMetric ? liveMetric.mae : null;
+      items.push(makeBarItem("RMSE", initRmse, latestRmse, curRmse, true));
+      items.push(makeBarItem("MAE", initMae, latestMae, curMae, true));
+      items.push(makeBarItem("R²", initR2, latestR2, curR2));
     }
+    items.push(makeValueItem("n", n.toString()));
 
     return items;
-  }, [result, models]);
+  }, [modelInfo, trainData, versions, currentVersion, models]);
 
-  // Restore cached history/edits for the current model once per key.
-  useEffect(() => {
-    if (!CACHE_EDITS_ENABLED) return;
-    if (typeof window === "undefined") return;
-    if (!result || !modelSource) return;
-    const key = getCacheKey(
-      modelSource,
-      dataset,
-      modelType,
-      shapePoints,
-      seed,
-      nEstimators,
-      boostRate,
-      initReg,
-      elmAlpha,
-      earlyStopping,
-      scaleY,
-    );
-    if (cacheLoadedRef.current === key) return;
-    cacheLoadedRef.current = key;
-    try {
-      const raw = window.localStorage.getItem(key);
-      if (!raw) return;
-      const parsed = JSON.parse(raw) as {
-        history?: {
-          featureKey: string;
-          action: string;
-          ts: number;
-          changes?: HistoryChange[];
-          before?: KnotSet;
-          after?: KnotSet;
-        }[];
-        historyCursor?: number;
-        activePartialIdx?: number;
-      };
-      if (!parsed.history || !Array.isArray(parsed.history)) return;
-      const normalized: HistoryEntry[] = parsed.history.map((entry) => {
-        if (entry.changes) {
-          const changes = entry.changes.map((c) =>
-            c.delta == null && c.before != null && c.after != null ? { ...c, delta: c.after - c.before } : c,
-          );
-          return { featureKey: entry.featureKey, action: entry.action, ts: entry.ts, changes };
-        }
-        if (entry.before && entry.after) {
-          return { featureKey: entry.featureKey, action: entry.action, ts: entry.ts, changes: buildChanges(entry.before, entry.after) };
-        }
-        return { featureKey: entry.featureKey, action: entry.action, ts: entry.ts, changes: [] };
-      });
-      setHistory(normalized);
-      const cursor = typeof parsed.historyCursor === "number" ? parsed.historyCursor : parsed.history.length;
-      setHistoryCursor(cursor);
-      if (typeof parsed.activePartialIdx === "number") {
-        setActivePartialIdx(parsed.activePartialIdx);
-      }
-      const rebuilt = rebuildEditsFromHistory(normalized.slice(0, cursor));
-      setKnotEdits(rebuilt);
-      setCommittedEdits(rebuilt);
-      const active = result.partials[parsed.activePartialIdx ?? activePartialIdx];
-      const fallback = baselineKnots[active.key] ?? { x: [], y: [] };
-      setKnots(rebuilt[active.key] ?? fallback);
-      setSelectedKnots([]);
-    } catch (error) {
-      console.warn("Failed to restore cached edits.", error);
-    }
-  }, [
-    result,
-    modelSource,
-    dataset,
-    shapePoints,
-    seed,
-    nEstimators,
-    boostRate,
-    initReg,
-    elmAlpha,
-    earlyStopping,
-    scaleY,
-    baselineKnots,
-    activePartialIdx,
-  ]);
+  // Expose a synthetic `result` object so pages/components that pass `result` as a prop
+  // get a consistent view without needing individual model/data/version props.
+  const result = useMemo<TrainResponse | null>(() => {
+    if (!modelInfo || !trainData || !currentVersion) return null;
+    return { model: modelInfo, data: trainData, version: currentVersion };
+  }, [modelInfo, trainData, currentVersion]);
 
-  // Persist history/edits per model so a refresh can resume work.
-  useEffect(() => {
-    if (!CACHE_EDITS_ENABLED) return;
-    if (typeof window === "undefined") return;
-    if (!result || !modelSource) return;
-    const key = getCacheKey(
-      modelSource,
-      dataset,
-      modelType,
-      shapePoints,
-      seed,
-      nEstimators,
-      boostRate,
-      initReg,
-      elmAlpha,
-      earlyStopping,
-      scaleY,
-    );
-    try {
-      window.localStorage.setItem(
-        key,
-        JSON.stringify({
-          history,
-          historyCursor,
-          activePartialIdx,
-        }),
-      );
-    } catch (error) {
-      console.warn("Failed to persist cached edits.", error);
-    }
-  }, [
-    history,
-    historyCursor,
-    activePartialIdx,
-    result,
-    modelSource,
-    dataset,
-    shapePoints,
-    seed,
-    nEstimators,
-    boostRate,
-    initReg,
-    elmAlpha,
-    earlyStopping,
-    scaleY,
-  ]);
+  const fixedLinesByFeature = useMemo<Record<string, FixedLineSnapshot[]>>(() => {
+    const snapshots: Record<string, FixedLineSnapshot[]> = {};
+    const currentByFeature: Record<string, KnotSet> = {};
+    history.slice(0, historyCursor).forEach((entry, index) => {
+      const base = currentByFeature[entry.featureKey] ?? baselineKnots[entry.featureKey] ?? { x: [], y: [] };
+      const next = applyHistoryEntry(base, entry);
+      currentByFeature[entry.featureKey] = next;
+      snapshots[entry.featureKey] = [
+        ...(snapshots[entry.featureKey] ?? []),
+        { id: `${entry.ts}-${index}`, knots: cloneKnots(next) },
+      ].slice(-2);
+    });
+    return snapshots;
+  }, [history, historyCursor, baselineKnots]);
 
   return {
     datasets: DATASETS,
@@ -808,7 +778,10 @@ export const useGamLab = (options: InitOptions = {}) => {
     setScaleY,
     status,
     result,
-    debugPayload,
+    modelInfo,
+    trainData,
+    versions,
+    currentVersion,
     debugError,
     activePartialIdx,
     setActivePartialIdx,
@@ -818,6 +791,8 @@ export const useGamLab = (options: InitOptions = {}) => {
     knotEdits,
     setKnotEdits,
     committedEdits,
+    previousCommittedEdits,
+    fixedLinesByFeature,
     selectedKnots,
     setSelectedKnots,
     lockedFeatures,
@@ -830,6 +805,8 @@ export const useGamLab = (options: InitOptions = {}) => {
     deleteHistoryEntry,
     stats,
     models,
+    notifyInteractionStart,
+    notifyInteractionEnd,
     modelSource,
     handleModelSelect,
     manualTrain,
@@ -842,25 +819,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     partial,
     displayLabel,
   };
-};
-
-const getCacheKey = (
-  modelSource: string,
-  dataset: string,
-  modelType: "igann" | "igann_interactive",
-  points: number,
-  seed: number,
-  nEstimators: number,
-  boostRate: number,
-  initReg: number,
-  elmAlpha: number,
-  earlyStopping: number,
-  scaleY: boolean,
-) => {
-  if (modelSource.startsWith("model:") || modelSource.startsWith("saved:")) {
-    return `gam-lab:${modelSource}`;
-  }
-  return `gam-lab:train:${dataset}:${modelType}:${points}:${seed}:${nEstimators}:${boostRate}:${initReg}:${elmAlpha}:${earlyStopping}:${scaleY}`;
 };
 
 export type GamLabState = ReturnType<typeof useGamLab>;

@@ -1,0 +1,174 @@
+.trainHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.trainTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.trainButton {
+  border: none;
+  border-radius: 0.6rem;
+  padding: 0 1rem;
+  height: 34px;
+  background: #0f172a;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  white-space: nowrap;
+}
+
+.trainButton:hover {
+  opacity: 0.85;
+}
+
+.trainButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Primary row: Dataset + Model side by side */
+.primaryRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+@media (max-width: 560px) {
+  .primaryRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Generic field */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #64748b;
+}
+
+.select {
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.6rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 0.95rem;
+  color: #0f172a;
+  appearance: auto;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.select:focus {
+  outline: none;
+  border-color: #94a3b8;
+}
+
+.numberInput {
+  padding: 0.55rem 0.7rem;
+  border-radius: 0.6rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 0.9rem;
+  color: #0f172a;
+  width: 100%;
+  transition: border-color 0.15s ease;
+}
+
+.numberInput:focus {
+  outline: none;
+  border-color: #94a3b8;
+}
+
+/* Toggle row */
+.toggleRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.toggleField {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  padding: 0.55rem 0.85rem;
+  border-radius: 0.6rem;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  flex: 1 1 auto;
+}
+
+.toggleField:has(input:disabled) {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.toggleFieldText {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.toggleFieldLabel {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.toggleFieldHint {
+  font-size: 0.75rem;
+  color: #64748b;
+  line-height: 1.2;
+}
+
+/* Advanced settings */
+.advancedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: none;
+  background: none;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0.2rem 0;
+  margin-bottom: 0.65rem;
+}
+
+.advancedToggle:hover {
+  color: #0f172a;
+}
+
+.advancedToggleChevron {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.advancedGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.65rem;
+}

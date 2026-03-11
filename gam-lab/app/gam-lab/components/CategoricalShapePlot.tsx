@@ -8,9 +8,17 @@ import { zoom, zoomIdentity, type ZoomTransform } from "d3-zoom";
 import styles from "../page.module.css";
 import { KnotSet } from "../types";
 import { applyBrushSelection, applyClickSelection, resolveDragSelection } from "../lib/selection";
+import {
+  applyCommonAxisStyles,
+  ZERO_LINE_DASH,
+  ZERO_LINE_STROKE,
+  styleDensityBars,
+  styleDensityLabel,
+} from "../lib/plotStyle";
 
 type Props = {
   categories: string[];
+  scatterX: Array<string | number>;
   knots: KnotSet;
   baseline?: KnotSet;
   title: string;
@@ -26,6 +34,7 @@ type Props = {
 
 export default function CategoricalShapePlot({
   categories,
+  scatterX,
   knots,
   baseline,
   title,
@@ -96,6 +105,17 @@ export default function CategoricalShapePlot({
   useEffect(() => {
     knotsRef.current = knots;
   }, [knots]);
+
+  useEffect(() => {
+    const svgEl = svgRef.current;
+    if (!svgEl) return;
+    const blockWheelScroll = (event: WheelEvent) => {
+      if (interactionMode !== "zoom") return;
+      event.preventDefault();
+    };
+    svgEl.addEventListener("wheel", blockWheelScroll, { passive: false });
+    return () => svgEl.removeEventListener("wheel", blockWheelScroll);
+  }, [interactionMode]);
 
   const usableW = width - pad.left - pad.right;
   useLayoutEffect(() => {
@@ -171,8 +191,7 @@ export default function CategoricalShapePlot({
       .attr("transform", "rotate(-30)")
       .attr("dx", "-0.4em")
       .attr("dy", "0.6em");
-    root.selectAll(".domain").attr("stroke", "none");
-    root.selectAll(".tick line").attr("stroke", "#e2e8f0").attr("stroke-dasharray", "3 3");
+    applyCommonAxisStyles(root);
 
     root
       .selectAll<SVGLineElement, null>("line.zero-line")
@@ -183,8 +202,61 @@ export default function CategoricalShapePlot({
       .attr("x2", pad.left + usableW)
       .attr("y1", yScale(0))
       .attr("y2", yScale(0))
-      .attr("stroke", "#cbd5e1")
-      .attr("stroke-dasharray", "4 4");
+      .attr("stroke", ZERO_LINE_STROKE)
+      .attr("stroke-dasharray", ZERO_LINE_DASH);
+
+    // Histogram-style density overlay at the bottom (same intent as continuous editor).
+    const counts = new Map<string, number>();
+    for (let i = 0; i < categories.length; i += 1) counts.set(String(categories[i]), 0);
+    for (let i = 0; i < scatterX.length; i += 1) {
+      const key = String(scatterX[i]);
+      if (counts.has(key)) counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    let maxCount = 1;
+    counts.forEach((v) => {
+      if (v > maxCount) maxCount = v;
+    });
+    const avail = Math.max(8, pad.bottom - 8);
+    const histMax = Math.min(avail, usableH * 0.18);
+    const histBase = pad.top + usableH;
+    root
+      .selectAll<SVGLineElement, null>("line.y-axis-extend")
+      .data([null])
+      .join("line")
+      .classed("y-axis-extend", true)
+      .attr("x1", pad.left)
+      .attr("x2", pad.left)
+      .attr("y1", pad.top)
+      .attr("y2", histBase + histMax)
+      .attr("stroke", "#0f172a");
+    const histData = categories.map((cat) => ({ cat, count: counts.get(String(cat)) ?? 0 }));
+    const hist = root
+      .selectAll<SVGGElement, null>("g.cat-hist")
+      .data([null])
+      .join("g")
+      .classed("cat-hist", true);
+    hist
+      .selectAll<SVGRectElement, any>("rect.cat-hist-bar")
+      .data(histData, (d: any) => d.cat)
+      .join("rect")
+      .classed("cat-hist-bar", true)
+      .attr("x", (d: any) => {
+        const x = xScaleD3(d.cat);
+        return (x ?? pad.left) + Math.max(1, xScaleD3.bandwidth() * 0.12);
+      })
+      .attr("width", Math.max(1, xScaleD3.bandwidth() * 0.76))
+      .attr("y", () => histBase)
+      .attr("height", (d: any) => (d.count / maxCount) * histMax)
+      .call(styleDensityBars);
+    root
+      .selectAll<SVGTextElement, null>("text.density-label")
+      .data([null])
+      .join("text")
+      .classed("density-label", true)
+      .attr("x", pad.left)
+      .attr("y", height - 10)
+      .call(styleDensityLabel)
+      .text("Density");
 
     const valFromEvent = (event: any) => {
       const svgRect = svgEl.getBoundingClientRect();
@@ -230,6 +302,7 @@ export default function CategoricalShapePlot({
     };
 
     const dragBehaviour = d3Drag<SVGRectElement | SVGCircleElement, { idx: number }>()
+      .filter(() => interactionMode !== "zoom")
       .on("start", (event, d) => {
         isDraggingRef.current = true;
         onDragStartRef.current();
@@ -412,8 +485,9 @@ export default function CategoricalShapePlot({
             .append("rect")
             .classed("cat-bar", true)
             .classed("drag-handle", true)
-            .style("cursor", "grab")
+            .style("cursor", interactionMode === "zoom" ? "default" : "grab")
             .on("click", (event, d) => {
+              if (interactionMode === "zoom") return;
               const multi = event.shiftKey || event.metaKey || event.ctrlKey;
               const current = selectedIdxsRef.current;
               const next = applyClickSelection({ current, idx: d.idx, multi: Boolean(multi), mode: "free" });
@@ -427,7 +501,9 @@ export default function CategoricalShapePlot({
       .attr("x", (d) => ((xScaleD3(d.cat) ?? pad.left) + xScaleD3.bandwidth() * 0.15))
       .attr("width", xScaleD3.bandwidth() * 0.7)
       .attr("fill", (d) => (selectedIdxs.includes(d.idx) ? "rgba(14,165,233,0.95)" : "rgba(14,165,233,0.7)"))
-      .attr("stroke", (d) => (selectedIdxs.includes(d.idx) ? "#0c4a6e" : "#0b172a"));
+      .attr("stroke", (d) => (selectedIdxs.includes(d.idx) ? "#0c4a6e" : "#0b172a"))
+      .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
+      .style("cursor", interactionMode === "zoom" ? "default" : "grab");
     rectSel
       .attr("y", (d) => {
         const y0 = yScale(Math.max(0, d.val));
@@ -450,8 +526,9 @@ export default function CategoricalShapePlot({
             .classed("cat-dot", true)
             .classed("drag-handle", true)
             .attr("r", 6)
-            .style("cursor", "grab")
+            .style("cursor", interactionMode === "zoom" ? "default" : "grab")
             .on("click", (event, d) => {
+              if (interactionMode === "zoom") return;
               const multi = event.shiftKey || event.metaKey || event.ctrlKey;
               const current = selectedIdxsRef.current;
               const next = applyClickSelection({ current, idx: d.idx, multi: Boolean(multi), mode: "free" });
@@ -465,7 +542,9 @@ export default function CategoricalShapePlot({
       .attr("cx", (d) => ((xScaleD3(d.cat) ?? pad.left) + xScaleD3.bandwidth() * 0.15 + xScaleD3.bandwidth() * 0.35))
       .attr("fill", (d) => (selectedIdxs.includes(d.idx) ? "#0c4a6e" : "#0ea5e9"))
       .attr("stroke", "#0b172a")
-      .attr("stroke-width", 1);
+      .attr("stroke-width", 1)
+      .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
+      .style("cursor", interactionMode === "zoom" ? "default" : "grab");
     dotSel.attr("cy", (d) => yScale(d.val));
 
     bars.raise();
@@ -482,8 +561,7 @@ export default function CategoricalShapePlot({
           zoomRef.current = event.transform;
           const zy = event.transform.rescaleY(baseYScale);
           root.selectAll<SVGGElement, null>("g.y-axis").call(axisLeft(zy).ticks(6).tickSize(-usableW).tickSizeOuter(0) as any);
-          root.selectAll(".tick line").attr("stroke", "#e2e8f0").attr("stroke-dasharray", "3 3");
-          root.selectAll(".tick text").attr("fill", "#475569").attr("font-size", 10);
+          applyCommonAxisStyles(root);
           root
             .selectAll<SVGLineElement, null>("line.zero-line")
             .attr("y1", zy(0))
@@ -519,7 +597,7 @@ export default function CategoricalShapePlot({
     } else {
       svg.on(".zoom", null);
     }
-  }, [categories, knots, selectedIdxs, yRange.min, yRange.max, width, usableH, usableW, pad.top, pad.left, interactionMode]);
+  }, [categories, scatterX, knots, selectedIdxs, yRange.min, yRange.max, width, usableH, usableW, pad.top, pad.left, interactionMode]);
 
   return (
     <div ref={containerRef} className={styles.chartFrame}>
