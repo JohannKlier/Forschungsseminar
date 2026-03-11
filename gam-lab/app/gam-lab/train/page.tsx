@@ -80,9 +80,12 @@ export default function TrainPage() {
     baselineKnots,
   });
 
-  const smoothAmount = 0.5;
-  const [smoothingMode, setSmoothingMode] = useState(false);
-  const smoothingRangeMax = 32;
+  const [activeContinuousTool, setActiveContinuousTool] = useState<"drag" | "smooth">("drag");
+  const [dragFalloffRadius, setDragFalloffRadius] = useState(4);
+  const [dragRangeBoost, setDragRangeBoost] = useState(1);
+  const [smoothAmount, setSmoothAmount] = useState(0.5);
+  const [smoothingRangeMax, setSmoothingRangeMax] = useState(32);
+  const [smoothingSpeed, setSmoothingSpeed] = useState(1);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
@@ -252,10 +255,18 @@ export default function TrainPage() {
                 onSave={handleSave}
                 applyMonotonic={applyMonotonic}
                 addPointsInSelection={addPointsInSelection}
+                activeContinuousTool={activeContinuousTool}
+                setActiveContinuousTool={setActiveContinuousTool}
+                dragFalloffRadius={dragFalloffRadius}
+                setDragFalloffRadius={setDragFalloffRadius}
+                dragRangeBoost={dragRangeBoost}
+                setDragRangeBoost={setDragRangeBoost}
                 smoothAmount={smoothAmount}
-                smoothingMode={smoothingMode}
-                setSmoothingMode={setSmoothingMode}
+                setSmoothAmount={setSmoothAmount}
                 smoothingRangeMax={smoothingRangeMax}
+                setSmoothingRangeMax={setSmoothingRangeMax}
+                smoothingSpeed={smoothingSpeed}
+                setSmoothingSpeed={setSmoothingSpeed}
               />
               {models ? <PredictionFitPlot result={result} models={models} /> : null}
               {partial ? (

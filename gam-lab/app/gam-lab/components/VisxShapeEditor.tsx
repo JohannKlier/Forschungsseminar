@@ -9,7 +9,10 @@ import { brush as d3Brush } from "d3-brush";
 import { zoom, zoomIdentity, type ZoomTransform } from "d3-zoom";
 import styles from "../page.module.css";
 import { applyBrushSelection, applyClickSelection, resolveDragSelection } from "../lib/selection";
-import { smoothSeriesGaussianReflect } from "../lib/smoothing";
+import { smoothSeriesGaussianReflect, smoothSeriesBox, smoothSeriesMedian, smoothSeriesEWMA } from "../lib/smoothing";
+
+export type DragCurve = "gaussian" | "linear" | "cosine" | "sharp";
+export type SmoothingAlgorithm = "gaussian" | "box" | "median" | "exponential";
 import {
   applyCommonAxisStyles,
   ZERO_LINE_DASH,
@@ -34,9 +37,13 @@ type Props = {
   featureKey: string;
   interactionMode: "select" | "zoom";
   dragFalloffRadius?: number;
+  dragRangeBoost?: number;
+  dragCurve?: DragCurve;
   smoothingMode?: boolean;
   smoothAmount?: number;
   smoothingRangeMax?: number;
+  smoothingSpeed?: number;
+  smoothingAlgorithm?: SmoothingAlgorithm;
 };
 
 type KnotDatum = { x: number; y: number; idx: number };
@@ -64,9 +71,13 @@ export default function VisxShapeEditor({
   featureKey,
   interactionMode,
   dragFalloffRadius = 4,
+  dragRangeBoost = 1,
+  dragCurve = "gaussian",
   smoothingMode = false,
   smoothAmount = 0.5,
   smoothingRangeMax = 32,
+  smoothingSpeed = 1,
+  smoothingAlgorithm = "gaussian",
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -430,7 +441,20 @@ export default function VisxShapeEditor({
 
       const gaussianRadius = Math.max(1, Math.round(radius * 1.25));
       const sigma = Math.max(1e-3, gaussianRadius / 2);
-      const smoothed = smoothSeriesGaussianReflect(base.y, gaussianRadius, sigma).slice(minIdx, maxIdx + 1);
+      const smoothed = (() => {
+        switch (smoothingAlgorithm) {
+          case "box":
+            return smoothSeriesBox(base.y, gaussianRadius).slice(minIdx, maxIdx + 1);
+          case "median":
+            return smoothSeriesMedian(base.y, Math.max(1, Math.round(gaussianRadius * 0.6))).slice(minIdx, maxIdx + 1);
+          case "exponential": {
+            const ewmaAlpha = Math.max(0.02, 2 / (gaussianRadius + 1));
+            return smoothSeriesEWMA(base.y, ewmaAlpha).slice(minIdx, maxIdx + 1);
+          }
+          default:
+            return smoothSeriesGaussianReflect(base.y, gaussianRadius, sigma).slice(minIdx, maxIdx + 1);
+        }
+      })();
       const radiusSafe = Math.max(1, radius);
 
       const next = { x: [...base.x], y: [...base.y] };
@@ -498,7 +522,7 @@ export default function VisxShapeEditor({
       const live = knotsRef.current ?? knots;
       const next = { x: [...live.x], y: [...live.y] };
       const dynamicAmount = Math.max(0, Math.min(1, smoothAmount));
-      const ratePerSec = 0.6 + dynamicAmount * 2.0;
+      const ratePerSec = Math.max(0.1, smoothingSpeed) * (0.6 + dynamicAmount * 2.0);
       const alpha = Math.max(0.005, Math.min(0.08, 1 - Math.exp(-ratePerSec * Math.min(0.033, dtSec))));
       const deltas: Record<number, number> = {};
       let maxDelta = 0;
@@ -864,7 +888,7 @@ export default function VisxShapeEditor({
           }
           return Math.max(6, total / (sortedKnots.length - 1));
         })();
-        const radiusBoost = avgSpacingPx > 0 ? dxPx / avgSpacingPx : 0;
+        const radiusBoost = avgSpacingPx > 0 ? (dxPx / avgSpacingPx) * Math.max(0, dragRangeBoost) : 0;
         const dynamicRadius = Math.max(0, Math.min(60, DRAG_FALLOFF_RADIUS + radiusBoost));
         const dynamicSigma = dynamicRadius > 0 ? dynamicRadius / 2 : 1;
         const nearestDistance = (idx: number) => {
@@ -910,11 +934,24 @@ export default function VisxShapeEditor({
             nextY[idx] = base;
             continue;
           }
-          const weight = Math.exp(-(dist * dist) / (2 * dynamicSigma * dynamicSigma));
+          const rawWeight = (() => {
+            switch (dragCurve) {
+              case "linear":
+                return Math.max(0, 1 - dist / Math.max(1, dynamicRadius));
+              case "cosine":
+                return 0.5 * (1 + Math.cos(Math.PI * Math.min(1, dist / Math.max(1, dynamicRadius))));
+              case "sharp": {
+                const sharpSigma = Math.max(0.5, dynamicSigma / 2);
+                return Math.exp(-(dist * dist) / (2 * sharpSigma * sharpSigma));
+              }
+              default:
+                return Math.exp(-(dist * dist) / (2 * dynamicSigma * dynamicSigma));
+            }
+          })();
           const tapered =
             dist > dynamicRadius
-              ? weight * 0.5 * (1 + Math.cos(Math.PI * (dist - dynamicRadius) / fade))
-              : weight;
+              ? rawWeight * 0.5 * (1 + Math.cos(Math.PI * (dist - dynamicRadius) / fade))
+              : rawWeight;
           weights[idx] = tapered;
           if (tapered > maxWeight) maxWeight = tapered;
           nextY[idx] = base + delta * tapered;
@@ -1267,9 +1304,13 @@ export default function VisxShapeEditor({
     histogram,
     interactionMode,
     dragFalloffRadius,
+    dragRangeBoost,
+    dragCurve,
     smoothingMode,
     smoothAmount,
     smoothingRangeMax,
+    smoothingSpeed,
+    smoothingAlgorithm,
   ]);
 
   return (

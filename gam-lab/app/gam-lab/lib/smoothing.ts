@@ -83,6 +83,64 @@ const reflectIndex = (idx: number, n: number): number => {
   return k;
 };
 
+// Box (moving average) smoothing with reflected boundaries.
+export const smoothSeriesBox = (values: number[], radius: number): number[] => {
+  const n = values.length;
+  if (n <= 2 || radius <= 0) return [...values];
+  const r = Math.max(1, Math.round(radius));
+  const out = new Array<number>(n);
+  for (let i = 0; i < n; i += 1) {
+    let sum = 0;
+    let count = 0;
+    for (let d = -r; d <= r; d += 1) {
+      const j = reflectIndex(i + d, n);
+      const v = values[j];
+      if (!Number.isFinite(v)) continue;
+      sum += v;
+      count += 1;
+    }
+    out[i] = count > 0 ? sum / count : values[i];
+  }
+  return out;
+};
+
+// Median filter with reflected boundaries (outlier-robust).
+export const smoothSeriesMedian = (values: number[], radius: number): number[] => {
+  const n = values.length;
+  if (n <= 2 || radius <= 0) return [...values];
+  const r = Math.max(1, Math.round(radius));
+  const out = new Array<number>(n);
+  for (let i = 0; i < n; i += 1) {
+    const window: number[] = [];
+    for (let d = -r; d <= r; d += 1) {
+      const j = reflectIndex(i + d, n);
+      const v = values[j];
+      if (Number.isFinite(v)) window.push(v);
+    }
+    window.sort((a, b) => a - b);
+    out[i] = window.length > 0 ? (window[Math.floor(window.length / 2)] ?? values[i]) : values[i];
+  }
+  return out;
+};
+
+// Bidirectional exponential moving average (symmetric, edge-stable).
+export const smoothSeriesEWMA = (values: number[], alpha: number): number[] => {
+  const n = values.length;
+  if (n <= 1) return [...values];
+  const a = Math.max(0.01, Math.min(0.99, alpha));
+  const fwd = new Array<number>(n);
+  fwd[0] = values[0];
+  for (let i = 1; i < n; i += 1) {
+    fwd[i] = a * values[i] + (1 - a) * fwd[i - 1];
+  }
+  const bwd = new Array<number>(n);
+  bwd[n - 1] = values[n - 1];
+  for (let i = n - 2; i >= 0; i -= 1) {
+    bwd[i] = a * values[i] + (1 - a) * bwd[i + 1];
+  }
+  return fwd.map((v, i) => (v + (bwd[i] ?? v)) / 2);
+};
+
 // Gaussian smoothing with reflected boundaries (edge-stable).
 export const smoothSeriesGaussianReflect = (values: number[], radius: number, sigma: number): number[] => {
   const n = values.length;

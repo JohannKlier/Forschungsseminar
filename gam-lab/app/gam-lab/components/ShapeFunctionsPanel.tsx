@@ -1,11 +1,13 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
-import VisxShapeEditor from "./VisxShapeEditor";
+import VisxShapeEditor, { type DragCurve, type SmoothingAlgorithm } from "./VisxShapeEditor";
 import styles from "../page.module.css";
 import { KnotSet, ShapeFunction, TrainData } from "../types";
 import CategoricalShapePlot from "./CategoricalShapePlot";
 import { useShapeFunctionActions } from "../hooks/useShapeFunctionActions";
 import ShapeFunctionsGridView from "./ShapeFunctionsGridView";
 import { computeFeatureImportance } from "../lib/importance";
+
+type ContinuousActionTool = "drag" | "smooth";
 
 const ACTION_ICON_URLS = {
   align: "/action-icons/align.drawio.png",
@@ -39,11 +41,22 @@ type Props = {
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
   applyMonotonic: (direction: "increasing" | "decreasing") => void;
-  addPointsInSelection: () => void;
+  activeContinuousTool: ContinuousActionTool;
+  setActiveContinuousTool: Dispatch<SetStateAction<ContinuousActionTool>>;
+  dragFalloffRadius: number;
+  setDragFalloffRadius: Dispatch<SetStateAction<number>>;
+  dragRangeBoost: number;
+  setDragRangeBoost: Dispatch<SetStateAction<number>>;
   smoothAmount: number;
-  smoothingMode: boolean;
-  setSmoothingMode: Dispatch<SetStateAction<boolean>>;
+  setSmoothAmount: Dispatch<SetStateAction<number>>;
   smoothingRangeMax: number;
+  setSmoothingRangeMax: Dispatch<SetStateAction<number>>;
+  smoothingSpeed: number;
+  setSmoothingSpeed: Dispatch<SetStateAction<number>>;
+  dragCurve: DragCurve;
+  setDragCurve: Dispatch<SetStateAction<DragCurve>>;
+  smoothingAlgorithm: SmoothingAlgorithm;
+  setSmoothingAlgorithm: Dispatch<SetStateAction<SmoothingAlgorithm>>;
 };
 
 export default function ShapeFunctionsPanel({
@@ -71,11 +84,22 @@ export default function ShapeFunctionsPanel({
   onInteractionStart,
   onInteractionEnd,
   applyMonotonic,
-  addPointsInSelection,
+  activeContinuousTool,
+  setActiveContinuousTool,
+  dragFalloffRadius,
+  setDragFalloffRadius,
+  dragRangeBoost,
+  setDragRangeBoost,
   smoothAmount,
-  smoothingMode,
-  setSmoothingMode,
+  setSmoothAmount,
   smoothingRangeMax,
+  setSmoothingRangeMax,
+  smoothingSpeed,
+  setSmoothingSpeed,
+  dragCurve,
+  setDragCurve,
+  smoothingAlgorithm,
+  setSmoothingAlgorithm,
 }: Props) {
   const [panLocked, setPanLocked] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
@@ -83,6 +107,7 @@ export default function ShapeFunctionsPanel({
   const partial = useMemo(() => shapes[activePartialIdx] ?? shapes[0] ?? null, [shapes, activePartialIdx]);
   const interactionMode: "select" | "zoom" = panLocked || spacePanActive ? "zoom" : "select";
   const isPanning = interactionMode === "zoom";
+  const smoothingMode = activeContinuousTool === "smooth";
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -321,113 +346,249 @@ export default function ShapeFunctionsPanel({
             onSmoothStart={handleSmoothStart}
             onSmoothEnd={(start, end) => handleSmoothEnd(s.key, start, end)}
             title={label}
+            dragFalloffRadius={dragFalloffRadius}
+            dragRangeBoost={dragRangeBoost}
+            dragCurve={dragCurve}
             smoothingMode={smoothingMode}
             smoothAmount={smoothAmount}
             smoothingRangeMax={smoothingRangeMax}
+            smoothingSpeed={smoothingSpeed}
+            smoothingAlgorithm={smoothingAlgorithm}
           />
         );
+        const showContinuousTools = !s.categories?.length;
         return (
           <>
             <div className={styles.plotWithActionsRow}>
               <div className={styles.plotArea}>{plot}</div>
               <div className={styles.actionsScroll}>
                 <div className={styles.actionsStack}>
-                  <button
-                    className={`${styles.actionButton} ${styles.actionButtonWide} ${styles.actionIconButton} ${panLocked ? styles.actionButtonActive : ""}`}
-                    type="button"
-                    aria-label="Pan mode"
-                    aria-pressed={panLocked}
-                    title="Pan the plot. You can also hold Space temporarily."
-                    onClick={() => setPanLocked((prev) => !prev)}
-                  >
-                    Pan
-                  </button>
-                  <hr className={styles.actionsDivider} />
                   <div className={styles.actionsGroup}>
                     <span className={styles.actionsGroupLabel}>navigate</span>
+                    <button
+                      className={`${styles.panButton} ${panLocked ? styles.actionButtonActive : ""}`}
+                      type="button"
+                      aria-label="Pan mode"
+                      aria-pressed={panLocked}
+                      onClick={() => setPanLocked((prev) => !prev)}
+                    >
+                      Pan
+                    </button>
                     <span className={styles.actionsStatus}>
                       {spacePanActive && !panLocked ? "Space-pan active" : panLocked ? "Pan locked" : "Hold Space to pan"}
                     </span>
                   </div>
-                  {!s.categories?.length ? (
+                  <hr className={styles.actionsDivider} />
+                  {showContinuousTools ? (
                     <div className={styles.actionsGroup}>
-                      <span className={styles.actionsGroupLabel}>tool</span>
-                      <button
-                        className={`${styles.actionButton} ${styles.actionButtonSquare} ${styles.actionIconButton} ${smoothingMode ? styles.actionButtonActive : ""}`}
-                        type="button"
-                        disabled={isPanning}
-                        aria-label={smoothingMode ? "Disable smoothing mode" : "Enable smoothing mode"}
-                        aria-pressed={smoothingMode}
-                        onClick={() => setSmoothingMode((prev) => !prev)}
-                      >
-                        {smoothingMode ? "◎" : "○"}
-                      </button>
+                      <div className={styles.toolButtonGrid}>
+                        <button
+                          className={`${styles.actionButton} ${styles.toolButton} ${activeContinuousTool === "drag" ? styles.actionButtonActive : ""}`}
+                          type="button"
+                          disabled={isPanning}
+                          aria-pressed={activeContinuousTool === "drag"}
+                          onClick={() => setActiveContinuousTool("drag")}
+                        >
+                          Drag
+                        </button>
+                        <button
+                          className={`${styles.actionButton} ${styles.toolButton} ${activeContinuousTool === "smooth" ? styles.actionButtonActive : ""}`}
+                          type="button"
+                          disabled={isPanning}
+                          aria-pressed={activeContinuousTool === "smooth"}
+                          onClick={() => setActiveContinuousTool("smooth")}
+                        >
+                          Smooth
+                        </button>
+                      </div>
+                      <div className={styles.actionSettingsCard}>
+                        {activeContinuousTool === "drag" ? (
+                          <>
+                            <span className={styles.actionSettingLabel}>Falloff curve</span>
+                            <div className={styles.actionChips}>
+                              {(
+                                [
+                                  { value: "gaussian", label: "Gaussian" },
+                                  { value: "linear", label: "Linear" },
+                                  { value: "cosine", label: "Cosine" },
+                                  { value: "sharp", label: "Sharp" },
+                                ] as const
+                              ).map(({ value, label }) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  className={`${styles.actionChip} ${dragCurve === value ? styles.actionChipActive : ""}`}
+                                  onClick={() => setDragCurve(value)}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <span className={styles.actionSettingDesc}>
+                              {dragCurve === "gaussian" && "Bell-shaped falloff — smooth, natural feel"}
+                              {dragCurve === "linear" && "Even ramp from center to edge — predictable"}
+                              {dragCurve === "cosine" && "S-shaped rolloff — softer than linear"}
+                              {dragCurve === "sharp" && "Tight bell — localized, precise pull"}
+                            </span>
+                            <hr className={styles.actionSettingsDivider} />
+                            <label className={styles.actionSettingLabel}>
+                              <span>Influence radius</span>
+                              <span>{dragFalloffRadius}</span>
+                            </label>
+                            <input
+                              className={styles.actionRange}
+                              type="range"
+                              min="0"
+                              max="24"
+                              step="1"
+                              value={dragFalloffRadius}
+                              onChange={(event) => setDragFalloffRadius(Number(event.target.value))}
+                            />
+                            <label className={styles.actionSettingLabel}>
+                              <span>Spread on drag right</span>
+                              <span>{dragRangeBoost.toFixed(1)}x</span>
+                            </label>
+                            <input
+                              className={styles.actionRange}
+                              type="range"
+                              min="0"
+                              max="3"
+                              step="0.1"
+                              value={dragRangeBoost}
+                              onChange={(event) => setDragRangeBoost(Number(event.target.value))}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <span className={styles.actionSettingLabel}>Algorithm</span>
+                            <div className={styles.actionChips}>
+                              {(
+                                [
+                                  { value: "gaussian", label: "Gaussian" },
+                                  { value: "box", label: "Box avg" },
+                                  { value: "median", label: "Median" },
+                                  { value: "exponential", label: "Exp" },
+                                ] as const
+                              ).map(({ value, label }) => (
+                                <button
+                                  key={value}
+                                  type="button"
+                                  className={`${styles.actionChip} ${smoothingAlgorithm === value ? styles.actionChipActive : ""}`}
+                                  onClick={() => setSmoothingAlgorithm(value)}
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                            <span className={styles.actionSettingDesc}>
+                              {smoothingAlgorithm === "gaussian" && "Weighted average — smooth, general purpose"}
+                              {smoothingAlgorithm === "box" && "Uniform average — stronger, flatter result"}
+                              {smoothingAlgorithm === "median" && "Removes spikes without blurring the shape"}
+                              {smoothingAlgorithm === "exponential" && "Decays from center — preserves overall trend"}
+                            </span>
+                            <hr className={styles.actionSettingsDivider} />
+                            <label className={styles.actionSettingLabel}>
+                              <span>Strength</span>
+                              <span>{smoothAmount.toFixed(2)}</span>
+                            </label>
+                            <input
+                              className={styles.actionRange}
+                              type="range"
+                              min="0.1"
+                              max="1"
+                              step="0.05"
+                              value={smoothAmount}
+                              onChange={(event) => setSmoothAmount(Number(event.target.value))}
+                            />
+                            <label className={styles.actionSettingLabel}>
+                              <span>Range</span>
+                              <span>{smoothingRangeMax}</span>
+                            </label>
+                            <input
+                              className={styles.actionRange}
+                              type="range"
+                              min="4"
+                              max="64"
+                              step="1"
+                              value={smoothingRangeMax}
+                              onChange={(event) => setSmoothingRangeMax(Number(event.target.value))}
+                            />
+                            <label className={styles.actionSettingLabel}>
+                              <span>Speed</span>
+                              <span>{smoothingSpeed.toFixed(1)}x</span>
+                            </label>
+                            <input
+                              className={styles.actionRange}
+                              type="range"
+                              min="0.3"
+                              max="3"
+                              step="0.1"
+                              value={smoothingSpeed}
+                              onChange={(event) => setSmoothingSpeed(Number(event.target.value))}
+                            />
+                          </>
+                        )}
+                      </div>
                     </div>
                   ) : null}
+                  <hr className={styles.actionsDivider} />
                   <div className={styles.actionsGroup}>
                     <span className={styles.actionsGroupLabel}>{`selection (${selectedKnots.length})`}</span>
-                    {!s.categories?.length ? (
+                    <div className={styles.selectionActionsGrid}>
+                      {!s.categories?.length ? (
+                        <button
+                          className={styles.selectionActionButton}
+                          type="button"
+                          disabled={isPanning}
+                          onClick={interpolateSelection}
+                        >
+                          <img src={ACTION_ICON_URLS.drag} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
+                          <span className={styles.selectionActionLabel}>Interp.</span>
+                        </button>
+                      ) : null}
                       <button
-                        className={`${styles.actionButton} ${styles.actionButtonSquare} ${styles.actionIconButton}`}
-                        type="button"
-                        disabled={isPanning}
-                        aria-label="Interpolate line"
-                        onClick={interpolateSelection}
-                      >
-                        <img src={ACTION_ICON_URLS.drag} alt="" aria-hidden="true" className={styles.actionIconImage} />
-                      </button>
-                    ) : null}
-                    <button
-                      className={`${styles.actionButton} ${styles.actionButtonSquare} ${styles.actionIconButton}`}
-                      type="button"
-                      disabled={isPanning || selectedKnots.length === 0}
-                      aria-label="Align selection"
-                      onClick={alignSelection}
-                    >
-                      <img src={ACTION_ICON_URLS.align} alt="" aria-hidden="true" className={styles.actionIconImage} />
-                    </button>
-                    {s.categories?.length ? (
-                      <button
-                        className={`${styles.actionButton} ${styles.actionButtonSquare} ${styles.actionIconButton}`}
+                        className={styles.selectionActionButton}
                         type="button"
                         disabled={isPanning || selectedKnots.length === 0}
-                        aria-label="Set to zero"
-                        onClick={setSelectionToZero}
+                        onClick={alignSelection}
                       >
-                        0
+                        <img src={ACTION_ICON_URLS.align} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
+                        <span className={styles.selectionActionLabel}>Align</span>
                       </button>
-                    ) : null}
-                    {!s.categories?.length ? (
-                      <>
+                      {s.categories?.length ? (
                         <button
-                          className={`${styles.actionButton} ${styles.actionButtonSquare} ${styles.actionIconButton}`}
+                          className={styles.selectionActionButton}
                           type="button"
                           disabled={isPanning || selectedKnots.length === 0}
-                          aria-label="Monotonic increase"
-                          onClick={() => applyMonotonic("increasing")}
+                          onClick={setSelectionToZero}
                         >
-                          <img src={ACTION_ICON_URLS.monInc} alt="" aria-hidden="true" className={styles.actionIconImage} />
+                          <span style={{ fontSize: "1rem", fontWeight: 700, lineHeight: 1 }}>0</span>
+                          <span className={styles.selectionActionLabel}>Zero</span>
                         </button>
-                        <button
-                          className={`${styles.actionButton} ${styles.actionButtonSquare} ${styles.actionIconButton}`}
-                          type="button"
-                          disabled={isPanning || selectedKnots.length === 0}
-                          aria-label="Monotonic decrease"
-                          onClick={() => applyMonotonic("decreasing")}
-                        >
-                          <img src={ACTION_ICON_URLS.monDec} alt="" aria-hidden="true" className={styles.actionIconImage} />
-                        </button>
-                        <button
-                          className={`${styles.actionButton} ${styles.actionButtonSquare} ${styles.actionIconButton}`}
-                          type="button"
-                          disabled={isPanning || selectedKnots.length < 2}
-                          aria-label="Add points between"
-                          onClick={() => addPointsInSelection()}
-                        >
-                          ＋
-                        </button>
-                      </>
-                    ) : null}
+                      ) : null}
+                      {!s.categories?.length ? (
+                        <>
+                          <button
+                            className={styles.selectionActionButton}
+                            type="button"
+                            disabled={isPanning || selectedKnots.length === 0}
+                            onClick={() => applyMonotonic("increasing")}
+                          >
+                            <img src={ACTION_ICON_URLS.monInc} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
+                            <span className={styles.selectionActionLabel}>Mon ↑</span>
+                          </button>
+                          <button
+                            className={styles.selectionActionButton}
+                            type="button"
+                            disabled={isPanning || selectedKnots.length === 0}
+                            onClick={() => applyMonotonic("decreasing")}
+                          >
+                            <img src={ACTION_ICON_URLS.monDec} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
+                            <span className={styles.selectionActionLabel}>Mon ↓</span>
+                          </button>
+                        </>
+                      ) : null}
+                    </div>
                   </div>
                 </div>
               </div>

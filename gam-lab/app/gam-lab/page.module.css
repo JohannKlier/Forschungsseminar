@@ -1197,7 +1197,7 @@
 .actionsStack {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.55rem;
   padding: 0.25rem 0;
 }
 
@@ -1205,6 +1205,81 @@
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+.selectionActionsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.3rem;
+}
+
+.selectionActionButton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  padding: 0.4rem 0.2rem 0.3rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.55rem;
+  background: #ffffff;
+  color: #334155;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.selectionActionButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+}
+
+.selectionActionButton:active {
+  transform: translateY(0);
+}
+
+.selectionActionButton:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.selectionActionIcon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.selectionActionLabel {
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+  white-space: nowrap;
+}
+
+.panButton {
+  width: 100%;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #94a3b8;
+  border-radius: 0.5rem;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.panButton:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+}
+
+.panButton:active {
+  transform: translateY(0);
 }
 
 .actionsStatus {
@@ -1317,6 +1392,56 @@
   margin-top: 0.2rem;
 }
 
+.toolButtonGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+}
+
+.toolButton {
+  min-width: 0;
+  padding-inline: 0.55rem;
+}
+
+.actionSettingsCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.7rem;
+  border: 1px solid #dbe4ee;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.actionSettingsHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.actionSettingsTitle {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.actionSettingsHint {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: #64748b;
+}
+
+.actionSettingLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #334155;
+}
+
 .actionControlLabel {
   font-size: 0.8rem;
   font-weight: 600;
@@ -1325,6 +1450,52 @@
 
 .actionRange {
   accent-color: #0ea5e9;
+}
+
+.actionChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.actionChip {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.22rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 2rem;
+  background: #fff;
+  color: #475569;
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  text-align: center;
+}
+
+.actionChip:hover {
+  border-color: #0ea5e9;
+  color: #0ea5e9;
+}
+
+.actionChipActive {
+  background: #0ea5e9;
+  border-color: #0ea5e9;
+  color: #fff;
+}
+
+.actionSettingDesc {
+  font-size: 0.68rem;
+  line-height: 1.4;
+  color: #64748b;
+  padding: 0.15rem 0 0.1rem;
+}
+
+.actionSettingsDivider {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 0.1rem 0;
 }
 
 .actionButton:active {
