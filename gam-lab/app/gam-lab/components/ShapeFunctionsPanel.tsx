@@ -15,6 +15,7 @@ const ACTION_ICON_URLS = {
 };
 
 type Props = {
+  activeTourFocus?: "shape-overview" | "shape-plot" | "shape-actions" | "shape-views" | null;
   shapes: ShapeFunction[];
   trainData: TrainData;
   baselineKnots: Record<string, KnotSet>;
@@ -47,6 +48,7 @@ type Props = {
 };
 
 export default function ShapeFunctionsPanel({
+  activeTourFocus = null,
   shapes,
   trainData,
   baselineKnots,
@@ -189,11 +191,15 @@ export default function ShapeFunctionsPanel({
   const activeFeatureLocked = lockedFeatures.includes(partial.key);
 
   return (
-    <div className={styles.panel}>
-      <div className={styles.panelHeader}>
+    <div className={`${styles.panel} ${activeTourFocus === "shape-overview" ? styles.tourFocus : ""}`}>
+      <div
+        className={`${styles.panelHeader} ${
+          activeTourFocus === "shape-actions" || activeTourFocus === "shape-views" ? styles.tourFocus : ""
+        }`}
+      >
         <p className={styles.panelEyebrow}>Shape functions</p>
         <div className={styles.panelControlRow}>
-          <div className={styles.panelToggle}>
+          <div className={`${styles.panelToggle} ${activeTourFocus === "shape-views" ? styles.tourFocus : ""}`}>
             <button
               type="button"
               className={`${styles.panelToggleButton} ${viewMode === "single" ? styles.panelToggleButtonActive : ""}`}
@@ -210,7 +216,7 @@ export default function ShapeFunctionsPanel({
             </button>
           </div>
           {viewMode === "single" ? (
-            <div className={styles.featureHeaderRow}>
+            <div className={`${styles.featureHeaderRow} ${activeTourFocus === "shape-actions" ? styles.tourFocus : ""}`}>
               <button
                 type="button"
                 className={styles.navButtonInline}
@@ -245,7 +251,7 @@ export default function ShapeFunctionsPanel({
             <div />
           )}
           {viewMode === "single" ? (
-            <div className={styles.panelActions}>
+            <div className={`${styles.panelActions} ${activeTourFocus === "shape-actions" ? styles.tourFocus : ""}`}>
               <button
                 className={`${styles.panelToggleButton} ${styles.lockButton} ${activeFeatureLocked ? styles.panelToggleButtonActive : ""}`}
                 type="button"
@@ -329,8 +335,8 @@ export default function ShapeFunctionsPanel({
         return (
           <>
             <div className={styles.plotWithActionsRow}>
-              <div className={styles.plotArea}>{plot}</div>
-              <div className={styles.actionsScroll}>
+              <div className={`${styles.plotArea} ${activeTourFocus === "shape-plot" ? styles.tourFocus : ""}`}>{plot}</div>
+              <div className={`${styles.actionsScroll} ${activeTourFocus === "shape-actions" ? styles.tourFocus : ""}`}>
                 <div className={styles.actionsStack}>
                   <button
                     className={`${styles.actionButton} ${styles.actionButtonWide} ${styles.actionIconButton} ${panLocked ? styles.actionButtonActive : ""}`}

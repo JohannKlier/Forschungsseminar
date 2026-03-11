@@ -71,6 +71,7 @@ function HistoryPanel({
 }
 
 type Props = {
+  activeTourFocus?: "sidebar-edit" | "sidebar-history" | null;
   sidebarTab: "edit" | "history";
   setSidebarTab: Dispatch<SetStateAction<"edit" | "history">>;
   stats: StatItem[] | null;
@@ -81,6 +82,7 @@ type Props = {
 };
 
 export default function SidebarPanel({
+  activeTourFocus = null,
   sidebarTab,
   setSidebarTab,
   stats,
@@ -94,7 +96,7 @@ export default function SidebarPanel({
       <div className={styles.sidebarHeader}>
         <span className={styles.logo}>GAM Lab</span>
       </div>
-      <div className={styles.sidebarTabs}>
+      <div className={`${styles.sidebarTabs} ${activeTourFocus ? styles.tourFocus : ""}`}>
         <button
           type="button"
           className={`${styles.sidebarTabButton} ${sidebarTab === "edit" ? styles.sidebarTabButtonActive : ""}`}
@@ -113,6 +115,7 @@ export default function SidebarPanel({
       {sidebarTab === "edit" ? (
         <>
           <div className={styles.settingsSection}>
+            <div className={activeTourFocus === "sidebar-edit" ? styles.tourFocus : ""}>
             <p className={styles.settingsLabel}>Stats</p>
             <div className={styles.statsLegend}>
               <span className={styles.statsLegendItem}>
@@ -181,15 +184,18 @@ export default function SidebarPanel({
               </div>
             );
             })}
+            </div>
           </div>
         </>
       ) : (
-        <HistoryPanel
-          history={history}
-          formatHistoryAction={formatHistoryAction}
-          formatHistoryDetail={formatHistoryDetail}
-          onDeleteHistoryEntry={onDeleteHistoryEntry}
-        />
+        <div className={activeTourFocus === "sidebar-history" ? styles.tourFocus : ""}>
+          <HistoryPanel
+            history={history}
+            formatHistoryAction={formatHistoryAction}
+            formatHistoryDetail={formatHistoryDetail}
+            onDeleteHistoryEntry={onDeleteHistoryEntry}
+          />
+        </div>
       )}
     </div>
   );

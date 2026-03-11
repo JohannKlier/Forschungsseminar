@@ -364,6 +364,13 @@
   border: 1px solid #e2e8f0;
 }
 
+.bannerActions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
 .datasetLabel {
   margin: 0;
   font-size: 0.75rem;
@@ -394,6 +401,220 @@
   font-weight: 600;
   text-decoration: none;
   white-space: nowrap;
+}
+
+.helpButton {
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 0.75rem;
+  padding: 0.6rem 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.helpOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+}
+
+.tourTarget {
+  position: relative;
+}
+
+.sidebarTourTarget {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 360px;
+  height: 100vh;
+}
+
+.tourTargetActive {
+  isolation: isolate;
+  z-index: 60;
+}
+
+.tourFocus {
+  position: relative;
+  z-index: 61;
+  border-radius: 0.9rem;
+  box-shadow:
+    0 0 0 3px rgba(14, 165, 233, 0.9),
+    0 0 0 8px rgba(14, 165, 233, 0.18);
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.helpCallout {
+  position: fixed;
+  z-index: 70;
+  width: min(20rem, calc(100vw - 2rem));
+  height: 30rem;
+  max-height: 30rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  border-radius: 1rem;
+  border: 1px solid #dbeafe;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 30px 80px rgba(15, 23, 42, 0.24);
+}
+
+.helpCalloutPanelRight {
+  top: 11rem;
+  right: 1rem;
+  width: min(18rem, calc(100vw - 2rem));
+}
+
+.helpCalloutSidebarLeft {
+  top: 50%;
+  left: calc(100vw - 360px - 19rem - 1rem);
+  transform: translateY(-50%);
+  width: min(18rem, calc(100vw - 390px - 2rem));
+}
+
+.helpHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.helpEyebrow {
+  margin: 0 0 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.helpTitle {
+  margin: 0;
+  font-size: 1.3rem;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.helpCloseButton {
+  border: 1px solid #cbd5e1;
+  background: rgba(255, 255, 255, 0.84);
+  color: #0f172a;
+  border-radius: 0.75rem;
+  padding: 0.45rem 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.helpBody {
+  display: grid;
+  gap: 1rem;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.helpProgressRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.helpProgressLabel {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.helpProgressDots {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.helpProgressDot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.28);
+}
+
+.helpProgressDotActive {
+  background: #2563eb;
+  transform: scale(1.15);
+}
+
+.helpSpotlight {
+  padding: 0.85rem;
+  border-radius: 0.9rem;
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+  overflow: auto;
+}
+
+.helpLead {
+  margin: 0 0 0.75rem;
+  font-size: 0.92rem;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.helpList {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.helpListItem {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  margin: 0;
+  color: #0f172a;
+}
+
+.helpFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  flex-shrink: 0;
+}
+
+.helpNavButton,
+.helpNavButtonPrimary {
+  min-width: 6.5rem;
+  border-radius: 999px;
+  padding: 0.65rem 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.helpNavButton {
+  border: 1px solid #cbd5e1;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0f172a;
+}
+
+.helpNavButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.helpNavButtonPrimary {
+  border: none;
+  background: linear-gradient(135deg, #0ea5e9, #2563eb);
+  color: #ffffff;
+  box-shadow: 0 16px 34px rgba(37, 99, 235, 0.24);
 }
 
 .metricRow {
@@ -516,6 +737,39 @@
   display: flex;
   flex-direction: column;
   gap: 0.08rem;
+}
+
+@media (max-width: 720px) {
+  .bannerActions {
+    width: 100%;
+  }
+
+  .helpHeader,
+  .helpProgressRow,
+  .helpFooter {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .sidebarTourTarget {
+    position: static;
+    width: auto;
+    height: auto;
+  }
+
+  .helpCallout,
+  .helpCalloutPanelRight,
+  .helpCalloutSidebarLeft {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    top: auto;
+    bottom: 1rem;
+    width: auto;
+    height: min(30rem, calc(100vh - 2rem));
+    max-height: calc(100vh - 2rem);
+    transform: none;
+  }
 }
 
 .trainingToggleLabel {
