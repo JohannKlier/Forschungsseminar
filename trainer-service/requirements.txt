@@ -4,7 +4,7 @@ pydantic
 numpy
 pandas
 scikit-learn
--e ../../igann
+-e git+https://github.com/JohannKlier/igann.git#egg=igann
 dash
 dash-bootstrap-components
 i2dgraph

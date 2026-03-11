@@ -2,6 +2,7 @@
 
 from typing import Dict, List
 from collections.abc import Mapping, Sequence
+import inspect
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
@@ -14,6 +15,7 @@ from adult_preprocessing import preprocess_adult_income
 from breast_preprocessing import preprocess_breast_cancer
 from bike_preprocessing import preprocess_bike_hourly
 import json
+import time
 from pathlib import Path
 
 
@@ -46,8 +48,6 @@ class TrainRequest(BaseModel):
 class RefitRequest(TrainRequest):
     partials: List[Dict]
     locked_features: List[str] = []
-    refit_estimators: int = 50
-    refit_early_stopping: int | None = None
 
 
 def _to_jsonable(obj):
@@ -211,18 +211,92 @@ def build_feature_dict_from_partials(edited_partials: List[Dict], cat_info: Dict
             }
     return updates
 
+
+def merge_learned_shapes_preserve_base_grid(base_shapes: Dict, learned_shapes: Dict, feature_keys: List[str]) -> Dict:
+    """
+    Keep the edited base grid/category ordering and project learned shapes onto it.
+    This preserves frontend detail while still reflecting refit updates.
+    """
+    merged: Dict = {**base_shapes}
+    for key in feature_keys:
+        learned = learned_shapes.get(key)
+        if not learned:
+            continue
+        base = base_shapes.get(key)
+        if not base:
+            merged[key] = learned
+            continue
+
+        if learned.get("datatype") == "categorical" or base.get("datatype") == "categorical":
+            base_x_values = base.get("x")
+            learned_x_values = learned.get("x")
+            learned_y_values = learned.get("y")
+            base_cats = [str(v) for v in ([] if base_x_values is None else base_x_values)]
+            learned_x = [str(v) for v in ([] if learned_x_values is None else learned_x_values)]
+            learned_y = [float(v) for v in ([] if learned_y_values is None else learned_y_values)]
+            learned_map = {cat: learned_y[i] for i, cat in enumerate(learned_x) if i < len(learned_y)}
+            base_y_values = base.get("y")
+            base_y = [float(v) for v in ([] if base_y_values is None else base_y_values)]
+            merged[key] = {
+                **base,
+                "datatype": "categorical",
+                "x": base_cats,
+                "y": [learned_map.get(cat, base_y[i] if i < len(base_y) else 0.0) for i, cat in enumerate(base_cats)],
+            }
+            continue
+
+        base_x = _coerce_numeric_points(base.get("x"))
+        if len(base_x) == 0:
+            merged[key] = learned
+            continue
+        learned_x = _coerce_numeric_points(learned.get("x"))
+        learned_y = _coerce_numeric_points(learned.get("y"))
+        projected = interpolate_numeric(base_x, learned_x, learned_y)
+        merged[key] = {
+            **base,
+            "datatype": "numerical",
+            "x": base_x,
+            "y": projected,
+        }
+    return merged
+
+
+def center_shape_functions_for_data(
+    shape_functions: Dict,
+    feature_keys: List[str],
+    features_train: Dict[str, List],
+    cat_info: Dict,
+) -> tuple[Dict, float]:
+    """Center each feature contribution on empirical training data and return intercept shift."""
+    centered = {k: {**v} for k, v in shape_functions.items()}
+    intercept_shift = 0.0
+    for key in feature_keys:
+        shape_fn = centered.get(key)
+        if not shape_fn:
+            continue
+        contribs = evaluate_contribs(shape_fn, features_train.get(key, []), cat_info.get(key))
+        if not contribs:
+            continue
+        mu = float(np.mean(np.asarray(contribs, dtype=float)))
+        ys_raw = shape_fn.get("y")
+        ys = _coerce_numeric_points(ys_raw)
+        if len(ys) == 0:
+            continue
+        shape_fn["y"] = [y - mu for y in ys]
+        intercept_shift += mu
+    return centered, intercept_shift
+
 def build_train_response(
     request: TrainRequest,
     edited_partials: List[Dict] | None = None,
     locked_features: List[str] | None = None,
-    refit_estimators: int = 0,
-    refit_early_stopping: int | None = None,
 ):
     # Validate the dataset early to keep error responses simple and explicit.
     if request.dataset not in {"bike_hourly", "adult_income", "breast_cancer"}:
         raise HTTPException(status_code=400, detail="Only bike_hourly, adult_income, and breast_cancer are supported.")
     model_type = request.model_type if request.model_type in {"igann", "igann_interactive"} else "igann"
     center_shapes = bool(getattr(request, "center_shapes", False))
+
     # Clamp point count and hyperparameters to keep UI responsiveness predictable.
     num_points = max(2, min(250, request.points or 250))
     n_estimators = max(10, min(500, request.n_estimators))
@@ -230,15 +304,18 @@ def build_train_response(
     init_reg = max(0.01, min(10.0, request.init_reg))
     elm_alpha = max(0.01, min(10.0, request.elm_alpha))
     early_stopping = max(5, min(200, request.early_stopping))
+
     task_type = "classification" if request.dataset in {"adult_income", "breast_cancer"} else "regression"
     igann_task = "regression" if request.dataset in {"adult_income", "breast_cancer"} else task_type
     # Dataset-specific preprocessing returns: features, target, categorical metadata, labels.
+
     if request.dataset == "adult_income":
         X_proc, y_full, cat_info, labels = preprocess_adult_income(request.seed)
     elif request.dataset == "breast_cancer":
         X_proc, y_full, cat_info, labels = preprocess_breast_cancer()
     else:
         X_proc, y_full, cat_info, labels = preprocess_bike_hourly(request.seed)
+        
     # Train/test split for metrics and visual validation.
     feature_keys = list(X_proc.columns)
     X_train_df, X_test_df, y_train_arr, y_test_arr = train_test_split(
@@ -250,7 +327,7 @@ def build_train_response(
 
     # Train either base IGANN or IGANN_interactive based on frontend selection.
     model_cls = IGANN_interactive if model_type == "igann_interactive" else IGANN
-    igann = model_cls(
+    model_kwargs = dict(
         task=igann_task,
         n_estimators=n_estimators,
         boost_rate=boost_rate,
@@ -261,8 +338,15 @@ def build_train_response(
         random_state=request.seed,
         verbose=0,
         scale_y=use_scale_y,
-        **({"GAMwrapper": True, "GAM_detail": num_points} if model_type == "igann_interactive" else {}),
     )
+    
+    
+    
+    if model_type == "igann_interactive":
+        model_kwargs["GAMwrapper"] = True
+        model_kwargs["GAM_detail"] = num_points
+    igann = model_cls(**model_kwargs)
+
     if edited_partials:
         if model_type != "igann_interactive":
             raise HTTPException(
@@ -270,17 +354,17 @@ def build_train_response(
                 detail="Refit from edited shape functions currently requires model_type='igann_interactive'.",
             )
         feature_dict = build_feature_dict_from_partials(edited_partials, cat_info)
+        locked_set = {str(f) for f in (locked_features or [])}
+        fit_cols = [col for col in feature_keys if str(col) not in locked_set]
+        if not fit_cols:
+            raise HTTPException(
+                status_code=400,
+                detail="All features are locked; no features left for refit.",
+            )
         igann.fit_from_shape_functions(
-            X_train_df,
+            X_train_df[fit_cols],
             y_train,
             feature_dict,
-            locked_features=locked_features,
-            refit_estimators=max(0, int(refit_estimators)),
-            refit_early_stopping=(
-                max(1, min(200, int(refit_early_stopping)))
-                if refit_early_stopping is not None
-                else None
-            ),
         )
     else:
         igann.fit(X_train_df, y_train)
@@ -296,17 +380,18 @@ def build_train_response(
     def calc_metrics(y_true, y_pred):
         # Minimal metrics for quick UI summaries.
         if len(y_true) == 0:
-            return {"rmse": None, "r2": None, "acc": None, "count": 0}
+            return {"rmse": None, "mae": None, "r2": None, "acc": None, "count": 0}
         if task_type == "classification":
             y_bin = (y_true >= 0.5).astype(float)
             p_bin = (y_pred >= 0.5).astype(float)
             acc_val = float(np.mean(y_bin == p_bin))
             return {"acc": acc_val, "count": int(len(y_true))}
         rmse_val = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+        mae_val = float(np.mean(np.abs(y_true - y_pred)))
         mean_y = float(np.mean(y_true))
         r2_den = float(np.sum((y_true - mean_y) ** 2))
         r2_val = float(1 - np.sum((y_true - y_pred) ** 2) / r2_den) if r2_den != 0 else 0.0
-        return {"rmse": rmse_val, "r2": r2_val, "count": int(len(y_true))}
+        return {"rmse": rmse_val, "mae": mae_val, "r2": r2_val, "count": int(len(y_true))}
 
     # Map feature keys to human-readable labels for display.
     label_map = labels
@@ -320,15 +405,26 @@ def build_train_response(
             features_test[cat_key] = [str(v) for v in features_test[cat_key]]
     test_len = len(X_test_df)
 
-    # Shape functions come from the interactive GAM wrapper or from IGANN directly.
-    shape_functions = (
-        igann.GAM.get_feature_dict()
-        if getattr(igann, "GAM", None) is not None
-        else igann.get_shape_functions_as_dict()
-    )
+    # Shape functions:
+    # - default: interactive GAM wrapper dict or base IGANN dict
+    # - refit-from-edits: merge edited base dict with freshly derived shapes from current model
+    if edited_partials and model_type == "igann_interactive":
+        base_shapes = build_feature_dict_from_partials(edited_partials, cat_info)
+        learned_shapes = igann.get_shape_functions_as_dict()
+        shape_functions = merge_learned_shapes_preserve_base_grid(base_shapes, learned_shapes, feature_keys)
+    else:
+        shape_functions = (
+            igann.GAM.get_feature_dict()
+            if getattr(igann, "GAM", None) is not None
+            else igann.get_shape_functions_as_dict()
+        )
     if not shape_functions:
         raise HTTPException(status_code=500, detail="Model did not produce shape functions.")
     shape_functions = normalize_numeric_shape_points(shape_functions, feature_keys, cat_info, num_points)
+    if center_shapes and edited_partials and model_type == "igann_interactive":
+        shape_functions, _ = center_shape_functions_for_data(
+            shape_functions, feature_keys, features_train, cat_info
+        )
 
     def get_shape(key: str) -> Dict:
         return shape_functions.get(key, {})
@@ -412,45 +508,65 @@ def build_train_response(
                 }
             )
 
+    # Strip scatterX out of partials — raw data lives in the data block now.
+    shapes = []
+    for partial in partials:
+        shape: Dict = {"key": partial["key"], "label": partial["label"]}
+        if "categories" in partial and partial["categories"]:
+            shape["categories"] = partial["categories"]
+        if "editableX" in partial:
+            shape["editableX"] = partial["editableX"]
+        if "editableY" in partial:
+            shape["editableY"] = partial["editableY"]
+        shapes.append(shape)
+
+    version_id = str(int(time.time() * 1000))
+    is_refit = bool(edited_partials)
+
     return {
-        "dataset": request.dataset,
-        "model_type": model_type,
-        "center_shapes": center_shapes,
-        "seed": request.seed,
-        "n_estimators": n_estimators,
-        "boost_rate": boost_rate,
-        "init_reg": init_reg,
-        "elm_alpha": elm_alpha,
-        "early_stopping": early_stopping,
-        "scale_y": use_scale_y,
-        "points": num_points,
-        "intercept": intercept_val,
-        "partials": partials,
-        "predictions": preds_train.tolist(),
-        "y": y_display,
-        "task": task_type,
-        "source": model_type,
-        "trainMetrics": train_metrics,
-        "testMetrics": test_metrics,
-        "testPreds": preds_test.tolist(),
-        "testY": y_test.tolist(),
-        "point_counts": {key: len((shape_functions.get(key) or {}).get("x", [])) for key in feature_keys},
+        "model": {
+            "dataset": request.dataset,
+            "model_type": model_type,
+            "task": task_type,
+            "seed": request.seed,
+            "n_estimators": n_estimators,
+            "boost_rate": boost_rate,
+            "init_reg": init_reg,
+            "elm_alpha": elm_alpha,
+            "early_stopping": early_stopping,
+            "scale_y": use_scale_y,
+            "points": num_points,
+        },
+        "data": {
+            "trainX": features_train,
+            "trainY": y_display,
+            "testY": y_test.tolist(),
+            "categories": cat_info,
+            "featureLabels": label_map,
+        },
+        "version": {
+            "versionId": version_id,
+            "timestamp": int(time.time() * 1000),
+            "source": "refit" if is_refit else "train",
+            "center_shapes": center_shapes,
+            "locked_features": [str(f) for f in (locked_features or [])],
+            "refit_from_edits": is_refit,
+            "intercept": intercept_val,
+            "trainMetrics": train_metrics,
+            "testMetrics": test_metrics,
+            "shapes": shapes,
+        },
     }
 
 
 @app.post("/refit")
 def refit(request: RefitRequest):
-    """Refit from frontend-edited shape functions and return refreshed partials/predictions."""
+    """Refit from frontend-edited shape functions and return refreshed shapes/data."""
     response = build_train_response(
         request,
         edited_partials=request.partials,
         locked_features=request.locked_features,
-        refit_estimators=request.refit_estimators,
-        refit_early_stopping=request.refit_early_stopping,
     )
-    response["refit_from_edits"] = True
-    response["locked_features"] = [str(f) for f in request.locked_features]
-    response["center_shapes"] = bool(request.center_shapes)
     return _to_jsonable(response)
 
 
@@ -463,6 +579,82 @@ def list_models():
     return {"models": names}
 
 
+def normalize_stored_model_payload(payload: Dict) -> Dict:
+    # Support legacy preset JSONs by mapping them into the current TrainResponse shape.
+    if all(key in payload for key in ("model", "data", "version")):
+        return payload
+
+    partials = payload.get("partials") or []
+    shapes = []
+    train_x = {}
+    categories = {}
+    feature_labels = {}
+    for partial in partials:
+        key = str(partial.get("key", ""))
+        if not key:
+            continue
+        label = str(partial.get("label") or key)
+        partial_categories = [str(cat) for cat in (partial.get("categories") or [])]
+        editable_x = partial.get("editableX")
+        editable_y = partial.get("editableY")
+        scatter_x = partial.get("scatterX") or []
+        train_x[key] = scatter_x
+        feature_labels[key] = label
+        if partial_categories:
+            categories[key] = partial_categories
+        shapes.append(
+            {
+                "key": key,
+                "label": label,
+                "editableX": editable_x,
+                "editableY": editable_y,
+                "categories": partial_categories or None,
+            }
+        )
+
+    model_type = payload.get("model_type") or payload.get("source") or "igann"
+    task = payload.get("task") or "regression"
+    points = int(payload.get("points") or 250)
+    train_metrics = payload.get("trainMetrics") or {"count": len(payload.get("y") or [])}
+    test_metrics = payload.get("testMetrics") or {"count": len(payload.get("testY") or [])}
+    timestamp = int(time.time() * 1000)
+
+    return {
+        "model": {
+            "dataset": payload.get("dataset") or "unknown",
+            "model_type": model_type if model_type in {"igann", "igann_interactive"} else "igann",
+            "task": task if task in {"regression", "classification"} else "regression",
+            "seed": int(payload.get("seed") or 3),
+            "n_estimators": int(payload.get("n_estimators") or 100),
+            "boost_rate": float(payload.get("boost_rate") or 0.1),
+            "init_reg": float(payload.get("init_reg") or 1),
+            "elm_alpha": float(payload.get("elm_alpha") or 1),
+            "early_stopping": int(payload.get("early_stopping") or 50),
+            "scale_y": bool(payload.get("scale_y", True)),
+            "points": points,
+        },
+        "data": {
+            "trainX": train_x,
+            "trainY": payload.get("y") or [],
+            "testY": payload.get("testY") or [],
+            "categories": categories,
+            "featureLabels": feature_labels,
+        },
+        "version": {
+            "versionId": str(timestamp),
+            "timestamp": timestamp,
+            "source": "train",
+            "center_shapes": bool(payload.get("center_shapes", False)),
+            "locked_features": [str(f) for f in (payload.get("locked_features") or [])],
+            "refit_from_edits": False,
+            "intercept": float(payload.get("intercept") or 0.0),
+            "trainMetrics": train_metrics,
+            "testMetrics": test_metrics,
+            "shapes": shapes,
+        },
+    }
+
+
 @app.get("/models/{name}")
 def get_model(name: str):
     # Resolve a single stored model by name.
@@ -473,7 +665,7 @@ def get_model(name: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Model not found.")
     with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        return normalize_stored_model_payload(json.load(f))
 
 
 @app.get("/saved-models")
@@ -495,7 +687,7 @@ def get_saved_model(name: str):
     if not path.exists():
         raise HTTPException(status_code=404, detail="Model not found.")
     with path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        return normalize_stored_model_payload(json.load(f))
 
 
 @app.post("/saved-models")

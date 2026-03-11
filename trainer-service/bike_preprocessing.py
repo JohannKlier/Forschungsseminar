@@ -7,6 +7,17 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 
 
+def _sort_category_values(values):
+    def sort_key(value):
+        s = str(value)
+        try:
+            return (0, float(s), s)
+        except ValueError:
+            return (1, s.lower(), s)
+
+    return sorted([str(v) for v in values], key=sort_key)
+
+
 def preprocess_bike_hourly(seed: int):
     """Replicate preprocessing from test.ipynb for bike.csv."""
     bike_path = Path("/data/bike.csv")
@@ -85,7 +96,9 @@ def preprocess_bike_hourly(seed: int):
         X_proc = X_proc.astype(cast_map)
 
     cat_info = {
-        col: sorted([str(c) for c in X_proc[col].dropna().unique().tolist()]) for col in cat_features if col in X_proc.columns
+        col: _sort_category_values(X_proc[col].dropna().unique().tolist())
+        for col in cat_features
+        if col in X_proc.columns
     }
     labels = {col: col for col in X_proc.columns}
     return X_proc, y.to_numpy(), cat_info, labels
