@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "./components/ShapeFunctionsPanel";
+import type { DragCurve, SmoothingAlgorithm } from "./components/VisxShapeEditor";
 import SidebarPanel from "./components/SidebarPanel";
 import styles from "./page.module.css";
 import { useGamLab } from "./hooks/useGamLab";
@@ -321,9 +322,14 @@ function GamLabPageContent() {
     baselineKnots,
   });
 
-  const smoothAmount = 0.5;
-  const [smoothingMode, setSmoothingMode] = useState(false);
-  const smoothingRangeMax = 32;
+  const [activeContinuousTool, setActiveContinuousTool] = useState<"drag" | "smooth">("drag");
+  const [dragFalloffRadius, setDragFalloffRadius] = useState(4);
+  const [dragRangeBoost, setDragRangeBoost] = useState(1);
+  const [dragCurve, setDragCurve] = useState<DragCurve>("gaussian");
+  const [smoothAmount, setSmoothAmount] = useState(0.5);
+  const [smoothingRangeMax, setSmoothingRangeMax] = useState(32);
+  const [smoothingSpeed, setSmoothingSpeed] = useState(1);
+  const [smoothingAlgorithm, setSmoothingAlgorithm] = useState<SmoothingAlgorithm>("gaussian");
 
   if (!initialModel && !trainMode) {
     return null;
@@ -611,10 +617,22 @@ function GamLabPageContent() {
                 onInteractionEnd={notifyInteractionEnd}
                 applyMonotonic={applyMonotonic}
                 addPointsInSelection={addPointsInSelection}
+                activeContinuousTool={activeContinuousTool}
+                setActiveContinuousTool={setActiveContinuousTool}
+                dragFalloffRadius={dragFalloffRadius}
+                setDragFalloffRadius={setDragFalloffRadius}
+                dragRangeBoost={dragRangeBoost}
+                setDragRangeBoost={setDragRangeBoost}
+                dragCurve={dragCurve}
+                setDragCurve={setDragCurve}
                 smoothAmount={smoothAmount}
-                smoothingMode={smoothingMode}
-                setSmoothingMode={setSmoothingMode}
+                setSmoothAmount={setSmoothAmount}
                 smoothingRangeMax={smoothingRangeMax}
+                setSmoothingRangeMax={setSmoothingRangeMax}
+                smoothingSpeed={smoothingSpeed}
+                setSmoothingSpeed={setSmoothingSpeed}
+                smoothingAlgorithm={smoothingAlgorithm}
+                setSmoothingAlgorithm={setSmoothingAlgorithm}
               />
               {renderHelpCallout("shapePanel")}
             </div>

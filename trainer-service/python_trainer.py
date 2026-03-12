@@ -414,7 +414,7 @@ def build_train_response(
         shape_functions = merge_learned_shapes_preserve_base_grid(base_shapes, learned_shapes, feature_keys)
     else:
         shape_functions = (
-            igann.GAM.get_feature_dict()
+            igann.get_gam_feature_dict()
             if getattr(igann, "GAM", None) is not None
             else igann.get_shape_functions_as_dict()
         )
