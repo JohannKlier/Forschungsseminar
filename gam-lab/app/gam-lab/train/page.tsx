@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import PredictionFitPlot from "../components/PredictionFitPlot";
 import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
 import { type DragCurve, type SmoothingAlgorithm } from "../components/VisxShapeEditor";
@@ -9,8 +11,15 @@ import styles from "../page.module.css";
 import trainStyles from "./train.module.css";
 import { useGamLab } from "../hooks/useGamLab";
 import { useSidebarActions } from "../hooks/useSidebarActions";
+import { useAuditLogger } from "../hooks/useAuditLogger";
+import { useUiAuditLogger } from "../hooks/useUiAuditLogger";
 
 export default function TrainPage() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const { logEvent } = useAuditLogger();
+  useUiAuditLogger(logEvent);
   const {
     status,
     result,
@@ -65,7 +74,18 @@ export default function TrainPage() {
     undoLast,
     redoLast,
     deleteHistoryEntry,
-  } = useGamLab();
+  } = useGamLab({ auditLogger: logEvent });
+
+  useEffect(() => {
+    logEvent({
+      category: "system",
+      action: "page.view",
+      detail: {
+        pathname,
+        search,
+      },
+    });
+  }, [logEvent, pathname, search]);
 
   const { formatHistoryAction, formatHistoryDetail, applyMonotonic, addPointsInSelection } = useSidebarActions({
     partial,
@@ -102,9 +122,9 @@ export default function TrainPage() {
                 <p className={styles.datasetTitle}>{selectedDataset.label}</p>
                 <p className={styles.datasetSummary}>{selectedDataset.summary}</p>
               </div>
-              <a className={styles.selectModelButton} href="/">
+              <Link className={styles.selectModelButton} href="/">
                 Choose another model
-              </a>
+              </Link>
             </div>
           ) : null}
           <section className={styles.panel}>
@@ -289,7 +309,7 @@ export default function TrainPage() {
               ) : null}
             </>
           ) : (
-            <div className={styles.placeholder}>Press "Train model" to load shapes.</div>
+            <div className={styles.placeholder}>Press &quot;Train model&quot; to load shapes.</div>
           )}
         </section>
       </div>

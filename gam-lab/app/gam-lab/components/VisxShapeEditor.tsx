@@ -48,7 +48,7 @@ type Props = {
 
 type KnotDatum = { x: number; y: number; idx: number };
 
-const PADDING = { top: 16, right: 16, bottom: 72, left: 56 };
+const PADDING = { top: 16, right: 16, bottom: 72, left: 64 };
 const HEIGHT = 560;
 const SHOW_KNOT_MARKERS = false;
 const HIT_SIZE = 20;
@@ -620,6 +620,44 @@ export default function VisxShapeEditor({
       .attr("y2", histBase + histMax)
       .attr("stroke", "#0f172a");
 
+    // Separator line between main chart and histogram
+    content
+      .selectAll<SVGLineElement, null>("line.hist-separator")
+      .data([null])
+      .join("line")
+      .classed("hist-separator", true)
+      .attr("x1", PADDING.left)
+      .attr("x2", PADDING.left + usableWidth)
+      .attr("y1", histBase)
+      .attr("y2", histBase)
+      .attr("stroke", "#cbd5e1")
+      .attr("stroke-width", 1);
+
+    // Y-axis label: "Feature effect"
+    content
+      .selectAll<SVGTextElement, null>("text.y-axis-label")
+      .data([null])
+      .join("text")
+      .classed("y-axis-label", true)
+      .attr("transform", `translate(${14}, ${PADDING.top + usableHeight / 2}) rotate(-90)`)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#64748b")
+      .attr("font-size", 11)
+      .attr("font-weight", 600)
+      .text("Feature effect");
+
+    // Y-axis label: "Density" (rotated, next to histogram)
+    content
+      .selectAll<SVGTextElement, null>("text.density-y-label")
+      .data([null])
+      .join("text")
+      .classed("density-y-label", true)
+      .attr("transform", `translate(${14}, ${histBase + histMax / 2}) rotate(-90)`)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#64748b")
+      .attr("font-size", 10)
+      .text("Density");
+
     // Histogram of raw x values (overlaid at bottom of plot)
     const { bins, binStart, binWidth } = histogram;
     let maxBin = 1;
@@ -650,16 +688,6 @@ export default function VisxShapeEditor({
       })
       .attr("height", (d) => (d.count / maxBin) * histMax)
       .call(styleDensityBars);
-
-    content
-      .selectAll<SVGTextElement, null>("text.density-label")
-      .data([null])
-      .join("text")
-      .classed("density-label", true)
-      .attr("x", PADDING.left)
-      .attr("y", HEIGHT - 10)
-      .call(styleDensityLabel)
-      .text("Density");
 
     const baseData =
       baseline?.x?.length && baseline.y?.length

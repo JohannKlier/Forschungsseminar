@@ -17,7 +17,7 @@ const ACTION_ICON_URLS = {
 };
 
 type Props = {
-  activeTourFocus?: "shape-overview" | "shape-plot" | "shape-actions" | "shape-views" | null;
+  showTourLabels?: boolean;
   shapes: ShapeFunction[];
   trainData: TrainData;
   baselineKnots: Record<string, KnotSet>;
@@ -58,10 +58,11 @@ type Props = {
   setDragCurve: Dispatch<SetStateAction<DragCurve>>;
   smoothingAlgorithm: SmoothingAlgorithm;
   setSmoothingAlgorithm: Dispatch<SetStateAction<SmoothingAlgorithm>>;
+  hideLock?: boolean;
 };
 
 export default function ShapeFunctionsPanel({
-  activeTourFocus = null,
+  showTourLabels = false,
   shapes,
   trainData,
   baselineKnots,
@@ -102,6 +103,7 @@ export default function ShapeFunctionsPanel({
   setDragCurve,
   smoothingAlgorithm,
   setSmoothingAlgorithm,
+  hideLock = false,
 }: Props) {
   const [panLocked, setPanLocked] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
@@ -216,67 +218,12 @@ export default function ShapeFunctionsPanel({
   const activeFeatureLocked = lockedFeatures.includes(partial.key);
 
   return (
-    <div className={`${styles.panel} ${activeTourFocus === "shape-overview" ? styles.tourFocus : ""}`}>
-      <div
-        className={`${styles.panelHeader} ${
-          activeTourFocus === "shape-actions" || activeTourFocus === "shape-views" ? styles.tourFocus : ""
-        }`}
-      >
-        <p className={styles.panelEyebrow}>Shape functions</p>
-        <div className={styles.panelControlRow}>
-          <div className={`${styles.panelToggle} ${activeTourFocus === "shape-views" ? styles.tourFocus : ""}`}>
-            <button
-              type="button"
-              className={`${styles.panelToggleButton} ${viewMode === "single" ? styles.panelToggleButtonActive : ""}`}
-              onClick={() => setViewMode("single")}
-            >
-              Single
-            </button>
-            <button
-              type="button"
-              className={`${styles.panelToggleButton} ${viewMode === "grid" ? styles.panelToggleButtonActive : ""}`}
-              onClick={() => setViewMode("grid")}
-            >
-              Grid
-            </button>
-          </div>
-          {viewMode === "single" ? (
-            <div className={`${styles.featureHeaderRow} ${activeTourFocus === "shape-actions" ? styles.tourFocus : ""}`}>
-              <button
-                type="button"
-                className={styles.navButtonInline}
-                onClick={() => setActivePartialIdx((prev) => (prev - 1 + shapes.length) % shapes.length)}
-                aria-label="Previous feature"
-              >
-                ‹
-              </button>
-              <select
-                className={styles.featureSelect}
-                value={activePartialIdx}
-                onChange={(event) => setActivePartialIdx(Number(event.target.value))}
-                aria-label="Feature"
-              >
-                {shapes.map((s, idx) => (
-                  <option key={s.key} value={idx}>
-                    {s.categories && s.categories.length ? "Cat • " : "Cont • "}
-                    {s.label || s.key || `x${idx + 1}`} • I={formatImportance(featureImportance.normalizedByKey[s.key] ?? 0)}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className={styles.navButtonInline}
-                onClick={() => setActivePartialIdx((prev) => (prev + 1) % shapes.length)}
-                aria-label="Next feature"
-              >
-                ›
-              </button>
-            </div>
-          ) : (
-            <div />
-          )}
-          {viewMode === "single" ? (
-            <div className={`${styles.panelActions} ${activeTourFocus === "shape-actions" ? styles.tourFocus : ""}`}>
+    <div className={`${styles.panel} ${styles.panelFillHeight} ${showTourLabels ? styles.tourFocus : ""}`}>
+      <div className={styles.panelHeader}>
+        <div className={styles.panelEyebrowRow}>
+          <p className={styles.panelEyebrow}>Shape functions</p>
+          <div className={styles.panelEyebrowActions}>
+            {viewMode === "single" && !hideLock ? (
               <button
                 className={`${styles.panelToggleButton} ${styles.lockButton} ${activeFeatureLocked ? styles.panelToggleButtonActive : ""}`}
                 type="button"
@@ -285,8 +232,25 @@ export default function ShapeFunctionsPanel({
               >
                 {activeFeatureLocked ? "🔒" : "🔓"}
               </button>
+            ) : null}
+            <div className={`${styles.panelToggle} ${styles.tourLabelAnchor}`}>
+              {showTourLabels ? <span className={styles.tourLabel}>View mode</span> : null}
+              <button
+                type="button"
+                className={`${styles.panelToggleButton} ${viewMode === "single" ? styles.panelToggleButtonActive : ""}`}
+                onClick={() => setViewMode("single")}
+              >
+                Single
+              </button>
+              <button
+                type="button"
+                className={`${styles.panelToggleButton} ${viewMode === "grid" ? styles.panelToggleButtonActive : ""}`}
+                onClick={() => setViewMode("grid")}
+              >
+                Grid
+              </button>
             </div>
-          ) : null}
+          </div>
         </div>
       </div>
       <div className={styles.shapeLegend} aria-label="Shape function legend">
@@ -365,9 +329,45 @@ export default function ShapeFunctionsPanel({
         const showContinuousTools = !s.categories?.length;
         return (
           <>
+            <div className={`${styles.featureNavCentered} ${styles.tourLabelAnchor}`}>
+              {showTourLabels ? <span className={styles.tourLabel}>Feature selector</span> : null}
+              <button
+                type="button"
+                className={styles.navButtonInline}
+                onClick={() => setActivePartialIdx((prev) => (prev - 1 + shapes.length) % shapes.length)}
+                aria-label="Previous feature"
+              >
+                ‹
+              </button>
+              <select
+                className={styles.featureSelect}
+                value={activePartialIdx}
+                onChange={(event) => setActivePartialIdx(Number(event.target.value))}
+                aria-label="Feature"
+              >
+                {shapes.map((sf, idx) => (
+                  <option key={sf.key} value={idx}>
+                    {sf.categories && sf.categories.length ? "Cat • " : "Cont • "}
+                    {sf.label || sf.key || `x${idx + 1}`} • I={formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className={styles.navButtonInline}
+                onClick={() => setActivePartialIdx((prev) => (prev + 1) % shapes.length)}
+                aria-label="Next feature"
+              >
+                ›
+              </button>
+            </div>
             <div className={styles.plotWithActionsRow}>
-              <div className={`${styles.plotArea} ${activeTourFocus === "shape-plot" ? styles.tourFocus : ""}`}>{plot}</div>
-              <div className={`${styles.actionsScroll} ${activeTourFocus === "shape-actions" ? styles.tourFocus : ""}`}>
+              <div className={`${styles.plotArea} ${styles.tourLabelAnchor}`}>
+                {showTourLabels ? <span className={styles.tourLabel}>Plot</span> : null}
+                {plot}
+              </div>
+              <div className={`${styles.actionsScroll} ${styles.tourLabelAnchor}`}>
+                {showTourLabels ? <span className={styles.tourLabel}>Tools</span> : null}
                 <div className={styles.actionsStack}>
                   <div className={styles.actionsGroup}>
                     <span className={styles.actionsGroupLabel}>navigate</span>
@@ -386,28 +386,30 @@ export default function ShapeFunctionsPanel({
                   </div>
                   <hr className={styles.actionsDivider} />
                   {showContinuousTools ? (
-                    <div className={styles.actionsGroup}>
-                      <div className={styles.toolButtonGrid}>
+                    <div className={styles.toolTabContainer}>
+                      <div className={styles.toolTabBar} role="tablist">
                         <button
-                          className={`${styles.actionButton} ${styles.toolButton} ${activeContinuousTool === "drag" ? styles.actionButtonActive : ""}`}
+                          className={`${styles.toolTab} ${activeContinuousTool === "drag" ? styles.toolTabActive : ""}`}
                           type="button"
+                          role="tab"
+                          aria-selected={activeContinuousTool === "drag"}
                           disabled={isPanning}
-                          aria-pressed={activeContinuousTool === "drag"}
                           onClick={() => setActiveContinuousTool("drag")}
                         >
                           Drag
                         </button>
                         <button
-                          className={`${styles.actionButton} ${styles.toolButton} ${activeContinuousTool === "smooth" ? styles.actionButtonActive : ""}`}
+                          className={`${styles.toolTab} ${activeContinuousTool === "smooth" ? styles.toolTabActive : ""}`}
                           type="button"
+                          role="tab"
+                          aria-selected={activeContinuousTool === "smooth"}
                           disabled={isPanning}
-                          aria-pressed={activeContinuousTool === "smooth"}
                           onClick={() => setActiveContinuousTool("smooth")}
                         >
                           Smooth
                         </button>
                       </div>
-                      <div className={styles.actionSettingsCard}>
+                      <div className={styles.toolTabPanel} role="tabpanel">
                         {activeContinuousTool === "drag" ? (
                           <>
                             <span className={styles.actionSettingLabel}>Falloff curve</span>
@@ -436,44 +438,17 @@ export default function ShapeFunctionsPanel({
                               {dragCurve === "cosine" && "S-shaped rolloff — softer than linear"}
                               {dragCurve === "sharp" && "Tight bell — localized, precise pull"}
                             </span>
-                            <hr className={styles.actionSettingsDivider} />
-                            <label className={styles.actionSettingLabel}>
-                              <span>Influence radius</span>
-                              <span>{dragFalloffRadius}</span>
-                            </label>
-                            <input
-                              className={styles.actionRange}
-                              type="range"
-                              min="0"
-                              max="24"
-                              step="1"
-                              value={dragFalloffRadius}
-                              onChange={(event) => setDragFalloffRadius(Number(event.target.value))}
-                            />
-                            <label className={styles.actionSettingLabel}>
-                              <span>Spread on drag right</span>
-                              <span>{dragRangeBoost.toFixed(1)}x</span>
-                            </label>
-                            <input
-                              className={styles.actionRange}
-                              type="range"
-                              min="0"
-                              max="3"
-                              step="0.1"
-                              value={dragRangeBoost}
-                              onChange={(event) => setDragRangeBoost(Number(event.target.value))}
-                            />
                           </>
                         ) : (
                           <>
-                            <span className={styles.actionSettingLabel}>Algorithm</span>
+                            <span className={styles.actionSettingLabel}>Mode</span>
                             <div className={styles.actionChips}>
                               {(
                                 [
                                   { value: "gaussian", label: "Gaussian" },
-                                  { value: "box", label: "Box avg" },
+                                  { value: "box", label: "Box" },
                                   { value: "median", label: "Median" },
-                                  { value: "exponential", label: "Exp" },
+                                  { value: "exponential", label: "Exp." },
                                 ] as const
                               ).map(({ value, label }) => (
                                 <button
@@ -486,26 +461,6 @@ export default function ShapeFunctionsPanel({
                                 </button>
                               ))}
                             </div>
-                            <span className={styles.actionSettingDesc}>
-                              {smoothingAlgorithm === "gaussian" && "Weighted average — smooth, general purpose"}
-                              {smoothingAlgorithm === "box" && "Uniform average — stronger, flatter result"}
-                              {smoothingAlgorithm === "median" && "Removes spikes without blurring the shape"}
-                              {smoothingAlgorithm === "exponential" && "Decays from center — preserves overall trend"}
-                            </span>
-                            <hr className={styles.actionSettingsDivider} />
-                            <label className={styles.actionSettingLabel}>
-                              <span>Strength</span>
-                              <span>{smoothAmount.toFixed(2)}</span>
-                            </label>
-                            <input
-                              className={styles.actionRange}
-                              type="range"
-                              min="0.1"
-                              max="1"
-                              step="0.05"
-                              value={smoothAmount}
-                              onChange={(event) => setSmoothAmount(Number(event.target.value))}
-                            />
                             <label className={styles.actionSettingLabel}>
                               <span>Range</span>
                               <span>{smoothingRangeMax}</span>
@@ -518,19 +473,6 @@ export default function ShapeFunctionsPanel({
                               step="1"
                               value={smoothingRangeMax}
                               onChange={(event) => setSmoothingRangeMax(Number(event.target.value))}
-                            />
-                            <label className={styles.actionSettingLabel}>
-                              <span>Speed</span>
-                              <span>{smoothingSpeed.toFixed(1)}x</span>
-                            </label>
-                            <input
-                              className={styles.actionRange}
-                              type="range"
-                              min="0.3"
-                              max="3"
-                              step="0.1"
-                              value={smoothingSpeed}
-                              onChange={(event) => setSmoothingSpeed(Number(event.target.value))}
                             />
                           </>
                         )}
@@ -599,7 +541,8 @@ export default function ShapeFunctionsPanel({
                 </div>
               </div>
             </div>
-            <div className={styles.shapePanelFooter}>
+            <div className={`${styles.shapePanelFooter} ${styles.tourLabelAnchor}`}>
+              {showTourLabels ? <span className={styles.tourLabel}>Undo / Save</span> : null}
               <div className={styles.shapeEditActions}>
                 <button type="button" className={styles.undoButton} onClick={onUndo} disabled={!canUndo}>
                   Undo

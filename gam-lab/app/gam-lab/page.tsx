@@ -2,103 +2,26 @@
 
 import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "./components/ShapeFunctionsPanel";
 import type { DragCurve, SmoothingAlgorithm } from "./components/VisxShapeEditor";
 import SidebarPanel from "./components/SidebarPanel";
+import HelpCallout from "./components/HelpCallout";
 import styles from "./page.module.css";
 import { useGamLab } from "./hooks/useGamLab";
 import { useSidebarActions } from "./hooks/useSidebarActions";
-
-const helpSteps = [
-  {
-    eyebrow: "Step 1",
-    target: "shapePanel",
-    placementClass: "helpCalloutPanelRight",
-    focus: "shape-overview",
-    title: "Shape Functions Panel",
-    text: "This is the main workspace for changing the model. Each shape shows how one feature contributes to the prediction.",
-    bullets: [
-      "Select a feature and inspect its current shape.",
-      "Use this panel to decide which relationships look plausible or implausible.",
-      "Most of your work in the study happens here.",
-    ],
-  },
-  {
-    eyebrow: "Step 2",
-    target: "shapePanel",
-    placementClass: "helpCalloutPanelRight",
-    focus: "shape-plot",
-    title: "The Plot",
-    text: "The plot shows the current effect of the selected feature. This is the curve or bar pattern you will inspect and revise.",
-    bullets: [
-      "For continuous features, the line shows how the prediction changes across the feature range.",
-      "For categorical features, bars show the contribution of each category.",
-      "Look for shapes that conflict with your expectations about the domain.",
-    ],
-  },
-  {
-    eyebrow: "Step 3",
-    target: "shapePanel",
-    placementClass: "helpCalloutPanelRight",
-    focus: "shape-actions",
-    title: "Actions And Modes",
-    text: "The controls around the plot let you move between features and edit their behavior.",
-    bullets: [
-      "Use the feature selector and arrows to move through the model one feature at a time.",
-      "Use the action buttons to edit points, apply constraints, and save your work.",
-      "Undo and redo help you compare alternatives without losing progress.",
-    ],
-  },
-  {
-    eyebrow: "Step 4",
-    target: "shapePanel",
-    placementClass: "helpCalloutPanelRight",
-    focus: "shape-views",
-    title: "Single And Grid View",
-    text: "The panel supports both focused inspection and broad comparison.",
-    bullets: [
-      "Single view lets you work on one feature in detail.",
-      "Grid view helps you scan many shape functions quickly.",
-      "Use grid view to spot suspicious features, then switch back to single view to edit them.",
-    ],
-  },
-  {
-    eyebrow: "Step 5",
-    target: "sidebar",
-    placementClass: "helpCalloutSidebarLeft",
-    sidebarTab: "edit",
-    focus: "sidebar-edit",
-    title: "Sidebar Edit View",
-    text: "The edit view summarizes the currently selected feature and gives you supporting context for your decisions.",
-    bullets: [
-      "Review statistics for the selected feature.",
-      "Use this view when you want to understand the feature before changing it.",
-      "This area complements the plot rather than replacing it.",
-    ],
-  },
-  {
-    eyebrow: "Step 6",
-    target: "sidebar",
-    placementClass: "helpCalloutSidebarLeft",
-    sidebarTab: "history",
-    focus: "sidebar-history",
-    title: "Sidebar History View",
-    text: "The history view keeps track of edits you already made, so you can review and compare your changes.",
-    bullets: [
-      "Use it to see which actions were applied to a feature.",
-      "History helps you reason about whether your revisions improved the model.",
-      "Switch between edit and history while iterating on the same feature.",
-    ],
-  },
-] as const;
+import { useHelpTour } from "./hooks/useHelpTour";
+import { useAuditLogger } from "./hooks/useAuditLogger";
+import { useUiAuditLogger } from "./hooks/useUiAuditLogger";
 
 function GamLabPageContent() {
   const [showAdvancedTraining, setShowAdvancedTraining] = useState(false);
-  const [showHelp, setShowHelp] = useState(false);
-  const [helpStepIndex, setHelpStepIndex] = useState(0);
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
+  const search = searchParams.toString();
+  const { logEvent } = useAuditLogger();
+  useUiAuditLogger(logEvent);
   const rawModel = searchParams.get("model");
   const initialModel = rawModel && rawModel !== "undefined" ? rawModel : null;
   const trainMode = searchParams.get("train") === "1";
@@ -189,7 +112,19 @@ function GamLabPageContent() {
           scale_y: trainScaleY,
         }
       : null,
+    auditLogger: logEvent,
   });
+
+  useEffect(() => {
+    logEvent({
+      category: "system",
+      action: "page.view",
+      detail: {
+        pathname,
+        search,
+      },
+    });
+  }, [logEvent, pathname, search]);
 
   useEffect(() => {
     if (!initialModel && !trainMode) {
@@ -197,116 +132,7 @@ function GamLabPageContent() {
     }
   }, [initialModel, trainMode, router]);
 
-  useEffect(() => {
-    if (!showHelp) return;
-
-    const previousBodyOverflow = document.body.style.overflow;
-    const previousHtmlOverflow = document.documentElement.style.overflow;
-    document.body.style.overflow = "hidden";
-    document.documentElement.style.overflow = "hidden";
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setShowHelp(false);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.body.style.overflow = previousBodyOverflow;
-      document.documentElement.style.overflow = previousHtmlOverflow;
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [showHelp]);
-
-  const currentHelpStep = helpSteps[helpStepIndex];
-  const isFirstHelpStep = helpStepIndex === 0;
-  const isLastHelpStep = helpStepIndex === helpSteps.length - 1;
-
-  useEffect(() => {
-    if (!showHelp) return;
-    if (currentHelpStep.target !== "sidebar") return;
-    if (!("sidebarTab" in currentHelpStep) || !currentHelpStep.sidebarTab) return;
-    setSidebarTab(currentHelpStep.sidebarTab);
-  }, [showHelp, currentHelpStep, setSidebarTab]);
-
-  const renderHelpCallout = (target: (typeof helpSteps)[number]["target"]) => {
-    if (!showHelp || currentHelpStep.target !== target) return null;
-
-    return (
-      <div
-        className={`${styles.helpCallout} ${styles[currentHelpStep.placementClass]}`}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="dashboard-help-title"
-      >
-        <div className={styles.helpHeader}>
-          <div>
-            <p className={styles.helpEyebrow}>{currentHelpStep.eyebrow}</p>
-            <h2 id="dashboard-help-title" className={styles.helpTitle}>
-              {currentHelpStep.title}
-            </h2>
-          </div>
-          <button
-            type="button"
-            className={styles.helpCloseButton}
-            onClick={() => setShowHelp(false)}
-            aria-label="Close help"
-          >
-            Close
-          </button>
-        </div>
-        <div className={styles.helpBody}>
-          <div className={styles.helpProgressRow}>
-            <p className={styles.helpProgressLabel}>
-              Page {helpStepIndex + 1} of {helpSteps.length}
-            </p>
-            <div className={styles.helpProgressDots} aria-hidden="true">
-              {helpSteps.map((step, index) => (
-                <span
-                  key={step.title}
-                  className={`${styles.helpProgressDot} ${index === helpStepIndex ? styles.helpProgressDotActive : ""}`}
-                />
-              ))}
-            </div>
-          </div>
-          <section className={styles.helpSpotlight}>
-            <p className={styles.helpLead}>{currentHelpStep.text}</p>
-            <ul className={styles.helpList}>
-              {currentHelpStep.bullets.map((bullet) => (
-                <li key={bullet} className={styles.helpListItem}>
-                  {bullet}
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
-        <div className={styles.helpFooter}>
-          <button
-            type="button"
-            className={styles.helpNavButton}
-            onClick={() => setHelpStepIndex((current) => Math.max(0, current - 1))}
-            disabled={isFirstHelpStep}
-          >
-            Previous
-          </button>
-          <button
-            type="button"
-            className={styles.helpNavButtonPrimary}
-            onClick={() => {
-              if (isLastHelpStep) {
-                setShowHelp(false);
-                return;
-              }
-              setHelpStepIndex((current) => Math.min(helpSteps.length - 1, current + 1));
-            }}
-          >
-            {isLastHelpStep ? "Start editing" : "Next"}
-          </button>
-        </div>
-      </div>
-    );
-  };
+  const helpTour = useHelpTour(setSidebarTab);
 
   const { formatHistoryAction, formatHistoryDetail, applyMonotonic, addPointsInSelection } = useSidebarActions({
     partial,
@@ -339,26 +165,18 @@ function GamLabPageContent() {
     <div className={styles.pageFrame}>
       <div className={styles.page}>
         {result ? (
-          <section
-            className={`${styles.dashboard} ${styles.tourTarget} ${
-              showHelp && currentHelpStep.target === "dashboard" ? styles.tourTargetActive : ""
-            }`}
-          >
-            {showHelp ? <div className={styles.helpOverlay} aria-hidden="true" /> : null}
+          <section className={styles.dashboard}>
+            {helpTour.showHelp ? <div className={styles.helpOverlay} aria-hidden="true" /> : null}
             <div className={styles.datasetBanner}>
-              <div>
-                <p className={styles.datasetLabel}>Dataset</p>
-                <p className={styles.datasetTitle}>{selectedDataset.label}</p>
-                <p className={styles.datasetSummary}>{selectedDataset.summary}</p>
+              <div className={styles.bannerTitle}>
+                <span className={styles.datasetLabel}>Dataset</span>
+                <span className={styles.datasetTitle}>{selectedDataset.label}</span>
               </div>
               <div className={styles.bannerActions}>
                 <button
                   type="button"
                   className={styles.helpButton}
-                  onClick={() => {
-                    setHelpStepIndex(0);
-                    setShowHelp(true);
-                  }}
+                  onClick={helpTour.openHelp}
                 >
                   Help
                 </button>
@@ -367,7 +185,6 @@ function GamLabPageContent() {
                 </Link>
               </div>
             </div>
-            {renderHelpCallout("dashboard")}
             {modelSource === "train" ? (
               <section className={styles.panel}>
                 <div className={styles.panelHeader}>
@@ -589,9 +406,9 @@ function GamLabPageContent() {
                 ) : null}
               </section>
             ) : null}
-            <div className={`${styles.tourTarget} ${showHelp && currentHelpStep.target === "shapePanel" ? styles.tourTargetActive : ""}`}>
+            <div className={`${styles.tourTarget} ${styles.shapePanelSlot} ${helpTour.isStepActive("shapePanel") ? styles.tourTargetActive : ""}`}>
               <ShapeFunctionsPanel
-                activeTourFocus={showHelp && currentHelpStep.target === "shapePanel" ? currentHelpStep.focus : null}
+                showTourLabels={helpTour.isStepActive("shapePanel")}
                 shapes={currentVersion?.shapes ?? []}
                 trainData={trainData!}
                 baselineKnots={baselineKnots}
@@ -633,13 +450,25 @@ function GamLabPageContent() {
                 setSmoothingSpeed={setSmoothingSpeed}
                 smoothingAlgorithm={smoothingAlgorithm}
                 setSmoothingAlgorithm={setSmoothingAlgorithm}
+                hideLock={modelSource.startsWith("model:")}
               />
-              {renderHelpCallout("shapePanel")}
+              <HelpCallout
+                target="shapePanel"
+                currentStep={helpTour.currentStep}
+                stepIndex={helpTour.stepIndex}
+                totalSteps={helpTour.totalSteps}
+                isFirstStep={helpTour.isFirstStep}
+                isLastStep={helpTour.isLastStep}
+                isStepActive={helpTour.isStepActive}
+                onClose={helpTour.closeHelp}
+                onNext={helpTour.goNext}
+                onPrev={helpTour.goPrev}
+              />
             </div>
             {partial ? (
-              <div className={`${styles.sidebarTourTarget} ${showHelp && currentHelpStep.target === "sidebar" ? styles.tourTargetActive : ""}`}>
+              <div className={`${styles.sidebarTourTarget} ${helpTour.isStepActive("sidebar") ? styles.tourTargetActive : ""}`}>
                 <SidebarPanel
-                  activeTourFocus={showHelp && currentHelpStep.target === "sidebar" ? currentHelpStep.focus : null}
+                  showTourLabels={helpTour.isStepActive("sidebar")}
                   sidebarTab={sidebarTab}
                   setSidebarTab={setSidebarTab}
                   stats={stats}
@@ -648,7 +477,18 @@ function GamLabPageContent() {
                   formatHistoryDetail={formatHistoryDetail}
                   onDeleteHistoryEntry={deleteHistoryEntry}
                 />
-                {renderHelpCallout("sidebar")}
+                <HelpCallout
+                  target="sidebar"
+                  currentStep={helpTour.currentStep}
+                  stepIndex={helpTour.stepIndex}
+                  totalSteps={helpTour.totalSteps}
+                  isFirstStep={helpTour.isFirstStep}
+                  isLastStep={helpTour.isLastStep}
+                  isStepActive={helpTour.isStepActive}
+                  onClose={helpTour.closeHelp}
+                  onNext={helpTour.goNext}
+                  onPrev={helpTour.goPrev}
+                />
               </div>
             ) : null}
           </section>

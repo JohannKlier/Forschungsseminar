@@ -19,6 +19,7 @@
 
 # production
 /build
+/data/audit
 
 # misc
 .DS_Store

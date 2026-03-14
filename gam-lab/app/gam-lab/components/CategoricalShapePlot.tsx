@@ -66,7 +66,7 @@ export default function CategoricalShapePlot({
   const clipIdRef = useRef(`cat-clip-${Math.random().toString(36).slice(2, 9)}`);
   const [width, setWidth] = useState(0);
   const height = 560;
-  const pad = { top: 16, right: 16, bottom: 52, left: 56 };
+  const pad = { top: 16, right: 16, bottom: 52, left: 64 };
   const usableH = height - pad.top - pad.bottom;
   const computedRange = (() => {
     const vals = (knots.y ?? []).filter((v) => Number.isFinite(v));
@@ -229,6 +229,45 @@ export default function CategoricalShapePlot({
       .attr("y1", pad.top)
       .attr("y2", histBase + histMax)
       .attr("stroke", "#0f172a");
+
+    // Separator line between main chart and histogram
+    root
+      .selectAll<SVGLineElement, null>("line.hist-separator")
+      .data([null])
+      .join("line")
+      .classed("hist-separator", true)
+      .attr("x1", pad.left)
+      .attr("x2", pad.left + usableW)
+      .attr("y1", histBase)
+      .attr("y2", histBase)
+      .attr("stroke", "#cbd5e1")
+      .attr("stroke-width", 1);
+
+    // Y-axis label: "Feature effect"
+    root
+      .selectAll<SVGTextElement, null>("text.y-axis-label")
+      .data([null])
+      .join("text")
+      .classed("y-axis-label", true)
+      .attr("transform", `translate(${14}, ${pad.top + usableH / 2}) rotate(-90)`)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#64748b")
+      .attr("font-size", 11)
+      .attr("font-weight", 600)
+      .text("Feature effect");
+
+    // Y-axis label: "Density" (rotated, next to histogram)
+    root
+      .selectAll<SVGTextElement, null>("text.density-y-label")
+      .data([null])
+      .join("text")
+      .classed("density-y-label", true)
+      .attr("transform", `translate(${14}, ${histBase + histMax / 2}) rotate(-90)`)
+      .attr("text-anchor", "middle")
+      .attr("fill", "#64748b")
+      .attr("font-size", 10)
+      .text("Density");
+
     const histData = categories.map((cat) => ({ cat, count: counts.get(String(cat)) ?? 0 }));
     const hist = root
       .selectAll<SVGGElement, null>("g.cat-hist")
@@ -248,16 +287,6 @@ export default function CategoricalShapePlot({
       .attr("y", () => histBase)
       .attr("height", (d: any) => (d.count / maxCount) * histMax)
       .call(styleDensityBars);
-    root
-      .selectAll<SVGTextElement, null>("text.density-label")
-      .data([null])
-      .join("text")
-      .classed("density-label", true)
-      .attr("x", pad.left)
-      .attr("y", height - 10)
-      .call(styleDensityLabel)
-      .text("Density");
-
     const valFromEvent = (event: any) => {
       const svgRect = svgEl.getBoundingClientRect();
       const clientY = event?.sourceEvent?.clientY ?? event?.sourceEvent?.touches?.[0]?.clientY ?? event?.y ?? 0;

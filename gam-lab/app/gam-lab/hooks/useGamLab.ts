@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { DatasetOption, KnotSet, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, StatItem, TrainData, TrainResponse } from "../types";
 import { loadModel, refitModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
+import { type AuditLogFn } from "../lib/audit";
 
 // Dataset registry used by the UI selectors and training requests.
 const DATASETS: DatasetOption[] = [
@@ -48,6 +49,7 @@ type InitOptions = {
     early_stopping: number;
     scale_y: boolean;
   } | null;
+  auditLogger?: AuditLogFn;
 };
 
 type HistoryChange = { x: number; before?: number; after?: number; delta?: number };
@@ -59,7 +61,10 @@ type HistoryEntry = {
 };
 type FixedLineSnapshot = { id: string; knots: KnotSet };
 
+const noopAuditLog: AuditLogFn = () => {};
+
 export const useGamLab = (options: InitOptions = {}) => {
+  const logEvent = options.auditLogger ?? noopAuditLog;
   // User-configurable training inputs.
   const [dataset, setDataset] = useState(DATASETS[0].id);
   const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann");
@@ -135,6 +140,23 @@ export const useGamLab = (options: InitOptions = {}) => {
     setVersions((prev) => (isRefit ? [...prev, payload.version] : [payload.version]));
   };
 
+  const summarizeChanges = (changes: HistoryChange[]) => {
+    if (!changes.length) {
+      return { count: 0 };
+    }
+    const xs = changes.map((change) => change.x);
+    const deltas = changes
+      .map((change) => change.delta)
+      .filter((delta): delta is number => typeof delta === "number" && Number.isFinite(delta));
+    return {
+      count: changes.length,
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      deltaSum: deltas.reduce((sum, delta) => sum + delta, 0),
+      deltaAbsSum: deltas.reduce((sum, delta) => sum + Math.abs(delta), 0),
+    };
+  };
+
   // Trigger a fresh training run.
   const train = async (
     overrides?: {
@@ -151,24 +173,39 @@ export const useGamLab = (options: InitOptions = {}) => {
       scale_y?: boolean;
     },
   ) => {
+    const requestedParams = {
+      dataset: overrides?.dataset ?? dataset,
+      model_type: overrides?.model_type ?? modelType,
+      center_shapes: overrides?.center_shapes ?? centerShapes,
+      seed: overrides?.seed ?? seed,
+      points: overrides?.points ?? shapePoints,
+      n_estimators: overrides?.n_estimators ?? nEstimators,
+      boost_rate: overrides?.boost_rate ?? boostRate,
+      init_reg: overrides?.init_reg ?? initReg,
+      elm_alpha: overrides?.elm_alpha ?? elmAlpha,
+      early_stopping: overrides?.early_stopping ?? earlyStopping,
+      scale_y: overrides?.scale_y ?? scaleY,
+    };
+    logEvent({
+      category: "model",
+      action: "model.train_requested",
+      detail: requestedParams,
+    });
     setStatus("loading");
     setDebugError(null);
     setModelSource("train");
     try {
-      const payload = await trainModel({
-        dataset: overrides?.dataset ?? dataset,
-        model_type: overrides?.model_type ?? modelType,
-        center_shapes: overrides?.center_shapes ?? centerShapes,
-        seed: overrides?.seed ?? seed,
-        points: overrides?.points ?? shapePoints,
-        n_estimators: overrides?.n_estimators ?? nEstimators,
-        boost_rate: overrides?.boost_rate ?? boostRate,
-        init_reg: overrides?.init_reg ?? initReg,
-        elm_alpha: overrides?.elm_alpha ?? elmAlpha,
-        early_stopping: overrides?.early_stopping ?? earlyStopping,
-        scale_y: overrides?.scale_y ?? scaleY,
-      });
+      const payload = await trainModel(requestedParams);
       applyResponse({ ...payload, source: "service" }, false);
+      logEvent({
+        category: "model",
+        action: "model.train_succeeded",
+        detail: {
+          dataset: payload.model.dataset,
+          modelType: payload.model.model_type,
+          versionId: payload.version.versionId,
+        },
+      });
       setStatus("idle");
     } catch (error) {
       console.warn("Trainer service unavailable.", error);
@@ -176,6 +213,14 @@ export const useGamLab = (options: InitOptions = {}) => {
       setTrainData(null);
       setVersions([]);
       setDebugError(error instanceof Error ? error.message : "Unknown error");
+      logEvent({
+        category: "model",
+        action: "model.train_failed",
+        detail: {
+          ...requestedParams,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
       setStatus("error");
     }
   };
@@ -237,6 +282,11 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   // Load a model when the selector changes.
   const handleModelSelect = async (value: string) => {
+    logEvent({
+      category: "model",
+      action: "model.load_requested",
+      detail: { source: value },
+    });
     setModelSource(value);
     if (value === "train") return;
     setStatus("loading");
@@ -268,6 +318,15 @@ export const useGamLab = (options: InitOptions = {}) => {
       if (typeof payload.model.early_stopping === "number") setEarlyStopping(payload.model.early_stopping);
       if (typeof payload.version.center_shapes === "boolean") setCenterShapes(payload.version.center_shapes);
       setLockedFeatures(Array.isArray(payload.version.locked_features) ? payload.version.locked_features.map(String) : []);
+      logEvent({
+        category: "model",
+        action: "model.load_succeeded",
+        detail: {
+          source: value,
+          dataset: payload.model.dataset,
+          versionId: payload.version.versionId,
+        },
+      });
       setStatus("idle");
     } catch (error) {
       console.warn("Failed to load saved model.", error);
@@ -275,6 +334,14 @@ export const useGamLab = (options: InitOptions = {}) => {
       setTrainData(null);
       setVersions([]);
       setDebugError(error instanceof Error ? error.message : "Unknown error");
+      logEvent({
+        category: "model",
+        action: "model.load_failed",
+        detail: {
+          source: value,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
       setStatus("error");
     }
   };
@@ -303,30 +370,84 @@ export const useGamLab = (options: InitOptions = {}) => {
     if (!name) return;
     const payload = buildSavePayload();
     if (!payload) return;
+    logEvent({
+      category: "model",
+      action: "model.save_requested",
+      detail: {
+        name,
+        dataset: payload.model.dataset,
+        versionId: payload.version.versionId,
+      },
+    });
     try {
       await saveModel(name, payload);
       const savedValue = `saved:${name.replace(/\.json$/, "")}`;
       setModelSource(savedValue);
-      handleModelSelect(savedValue);
+      logEvent({
+        category: "model",
+        action: "model.save_succeeded",
+        detail: {
+          name: savedValue,
+          dataset: payload.model.dataset,
+          versionId: payload.version.versionId,
+        },
+      });
+      void handleModelSelect(savedValue);
     } catch (error) {
       console.warn("Failed to save model.", error);
+      logEvent({
+        category: "model",
+        action: "model.save_failed",
+        detail: {
+          name,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
     }
   };
 
   const toggleFeatureLock = (featureKey: string) => {
-    setLockedFeatures((prev) =>
-      prev.includes(featureKey) ? prev.filter((key) => key !== featureKey) : [...prev, featureKey],
-    );
+    setLockedFeatures((prev) => {
+      const next = prev.includes(featureKey) ? prev.filter((key) => key !== featureKey) : [...prev, featureKey];
+      logEvent({
+        category: "edit",
+        action: "feature.lock_toggled",
+        featureKey,
+        detail: {
+          locked: next.includes(featureKey),
+          lockedFeatures: next,
+        },
+      });
+      return next;
+    });
   };
 
   const manualRefitFromEdits = async () => {
     if (!modelInfo || !currentVersion) return;
     if (modelType !== "igann_interactive") {
       setDebugError("Refit from edited shape functions requires model type IGANN interactive.");
+      logEvent({
+        category: "model",
+        action: "model.refit_blocked",
+        detail: {
+          reason: "requires_igann_interactive",
+          modelType,
+        },
+      });
       return;
     }
     const payload = buildSavePayload();
     if (!payload) return;
+    logEvent({
+      category: "model",
+      action: "model.refit_requested",
+      detail: {
+        dataset,
+        modelType,
+        versionId: currentVersion.versionId,
+        lockedFeatures,
+      },
+    });
     setStatus("loading");
     setDebugError(null);
     setModelSource("train");
@@ -365,10 +486,28 @@ export const useGamLab = (options: InitOptions = {}) => {
       if (typeof refitPayload.model.points === "number") {
         setShapePoints(refitPayload.model.points);
       }
+      logEvent({
+        category: "model",
+        action: "model.refit_succeeded",
+        detail: {
+          dataset: refitPayload.model.dataset,
+          versionId: refitPayload.version.versionId,
+          lockedFeatures: refitPayload.version.locked_features,
+        },
+      });
       setStatus("idle");
     } catch (error) {
       console.warn("Refit failed.", error);
       setDebugError(error instanceof Error ? error.message : "Unknown error");
+      logEvent({
+        category: "model",
+        action: "model.refit_failed",
+        detail: {
+          dataset,
+          versionId: currentVersion.versionId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+      });
       setStatus("error");
     }
   };
@@ -401,7 +540,17 @@ export const useGamLab = (options: InitOptions = {}) => {
     setLockedFeatures((prev) =>
       prev.filter((featureKey) => currentVersion.shapes.some((s) => s.key === featureKey)),
     );
-  }, [currentVersion]);
+    logEvent({
+      category: "model",
+      action: "model.version_loaded",
+      detail: {
+        versionId: currentVersion.versionId,
+        source: currentVersion.source,
+        shapeCount: currentVersion.shapes.length,
+        refitFromEdits: currentVersion.refit_from_edits,
+      },
+    });
+  }, [currentVersion, logEvent]);
 
   // Update the visible knot set when switching active features.
   useEffect(() => {
@@ -418,7 +567,7 @@ export const useGamLab = (options: InitOptions = {}) => {
       setKnots(buildEditableKnots(active));
     }
     setSelectedKnots([]);
-  }, [currentVersion, activePartialIdx, baselineKnots]);
+  }, [currentVersion, activePartialIdx, baselineKnots, knotEdits]);
 
   const buildChanges = (before: KnotSet, after: KnotSet) => {
     const beforeMap = new Map<number, number>();
@@ -487,6 +636,16 @@ export const useGamLab = (options: InitOptions = {}) => {
   const recordAction = (featureKey: string, before: KnotSet, after: KnotSet, action = "edit") => {
     const changes = buildChanges(before, after);
     if (!changes.length) return;
+    logEvent({
+      category: "edit",
+      action: "edit.recorded",
+      featureKey,
+      detail: {
+        editAction: action,
+        summary: summarizeChanges(changes),
+        changes,
+      },
+    });
     setHistory((prev) => {
       const entry = { featureKey, action, ts: Date.now(), changes };
       const truncated = prev.slice(0, historyCursor);
@@ -520,18 +679,11 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
-  const applyHistoryEntry = (
-    current: KnotSet,
-    entry: { changes?: HistoryChange[] },
-  ) => {
-    return applyChanges(current, entry.changes, "redo");
-  };
-
   const rebuildEditsFromHistory = (entries: typeof history) => {
     const nextEdits: Record<string, KnotSet> = {};
     entries.forEach((entry) => {
       const base = nextEdits[entry.featureKey] ?? baselineKnots[entry.featureKey] ?? { x: [], y: [] };
-      nextEdits[entry.featureKey] = applyHistoryEntry(base, entry);
+      nextEdits[entry.featureKey] = applyChanges(base, entry.changes, "redo");
     });
     return nextEdits;
   };
@@ -581,20 +733,60 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   const undoLast = () => {
     if (historyCursor <= 0) return;
+    const entry = history[historyCursor - 1];
+    if (entry) {
+      logEvent({
+        category: "history",
+        action: "history.undo",
+        featureKey: entry.featureKey,
+        detail: {
+          entryIndex: historyCursor - 1,
+          editAction: entry.action,
+          summary: summarizeChanges(entry.changes),
+        },
+      });
+    }
     applyHistoryStep(historyCursor - 1, "undo");
   };
 
   const redoLast = () => {
     if (historyCursor >= history.length) return;
+    const entry = history[historyCursor];
+    if (entry) {
+      logEvent({
+        category: "history",
+        action: "history.redo",
+        featureKey: entry.featureKey,
+        detail: {
+          entryIndex: historyCursor,
+          editAction: entry.action,
+          summary: summarizeChanges(entry.changes),
+        },
+      });
+    }
     applyHistoryStep(historyCursor, "redo");
   };
 
   const deleteHistoryEntry = (index: number) => {
     const featureKey = history[index]?.featureKey;
+    const entry = history[index];
     // Remove the entry and all subsequent entries for the same feature.
     const nextHistory = history.filter((e, i) => i !== index && !(i > index && e.featureKey === featureKey));
     const removed = history.length - nextHistory.length;
     const nextCursor = Math.max(0, historyCursor - (historyCursor > index ? removed : 0));
+    if (entry) {
+      logEvent({
+        category: "history",
+        action: "history.deleted",
+        featureKey: entry.featureKey,
+        detail: {
+          entryIndex: index,
+          removedEntries: removed,
+          editAction: entry.action,
+          summary: summarizeChanges(entry.changes),
+        },
+      });
+    }
     setHistory(nextHistory);
     applyHistoryCursor(nextCursor, nextHistory);
   };
@@ -742,7 +934,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     const currentByFeature: Record<string, KnotSet> = {};
     history.slice(0, historyCursor).forEach((entry, index) => {
       const base = currentByFeature[entry.featureKey] ?? baselineKnots[entry.featureKey] ?? { x: [], y: [] };
-      const next = applyHistoryEntry(base, entry);
+      const next = applyChanges(base, entry.changes, "redo");
       currentByFeature[entry.featureKey] = next;
       snapshots[entry.featureKey] = [
         ...(snapshots[entry.featureKey] ?? []),

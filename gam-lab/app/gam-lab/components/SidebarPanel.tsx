@@ -71,7 +71,7 @@ function HistoryPanel({
 }
 
 type Props = {
-  activeTourFocus?: "sidebar-edit" | "sidebar-history" | null;
+  showTourLabels?: boolean;
   sidebarTab: "edit" | "history";
   setSidebarTab: Dispatch<SetStateAction<"edit" | "history">>;
   stats: StatItem[] | null;
@@ -82,7 +82,7 @@ type Props = {
 };
 
 export default function SidebarPanel({
-  activeTourFocus = null,
+  showTourLabels = false,
   sidebarTab,
   setSidebarTab,
   stats,
@@ -92,11 +92,12 @@ export default function SidebarPanel({
   onDeleteHistoryEntry,
 }: Props) {
   return (
-    <div className={styles.settingsRail}>
+    <div className={`${styles.settingsRail} ${showTourLabels ? styles.tourFocus : ""}`}>
       <div className={styles.sidebarHeader}>
         <span className={styles.logo}>GAM Lab</span>
       </div>
-      <div className={`${styles.sidebarTabs} ${activeTourFocus ? styles.tourFocus : ""}`}>
+      <div className={`${styles.sidebarTabs} ${styles.tourLabelAnchor}`}>
+        {showTourLabels ? <span className={styles.tourLabel}>Tabs</span> : null}
         <button
           type="button"
           className={`${styles.sidebarTabButton} ${sidebarTab === "edit" ? styles.sidebarTabButtonActive : ""}`}
@@ -115,7 +116,8 @@ export default function SidebarPanel({
       {sidebarTab === "edit" ? (
         <>
           <div className={styles.settingsSection}>
-            <div className={activeTourFocus === "sidebar-edit" ? styles.tourFocus : ""}>
+            <div className={styles.tourLabelAnchor}>
+              {showTourLabels ? <span className={styles.tourLabel}>Statistics</span> : null}
             <p className={styles.settingsLabel}>Stats</p>
             <div className={styles.statsLegend}>
               <span className={styles.statsLegendItem}>
@@ -188,7 +190,8 @@ export default function SidebarPanel({
           </div>
         </>
       ) : (
-        <div className={activeTourFocus === "sidebar-history" ? styles.tourFocus : ""}>
+        <div className={styles.tourLabelAnchor}>
+          {showTourLabels ? <span className={styles.tourLabel}>Edit history</span> : null}
           <HistoryPanel
             history={history}
             formatHistoryAction={formatHistoryAction}
