@@ -3,7 +3,7 @@ import VisxShapeEditor, { type DragCurve, type SmoothingAlgorithm } from "./Visx
 import styles from "../page.module.css";
 import { KnotSet, ShapeFunction, TrainData } from "../types";
 import CategoricalShapePlot from "./CategoricalShapePlot";
-import { useShapeFunctionActions } from "../hooks/useShapeFunctionActions";
+import { useShapeFunctionActions, type AlignSelectionMode } from "../hooks/useShapeFunctionActions";
 import ShapeFunctionsGridView from "./ShapeFunctionsGridView";
 import { computeFeatureImportance } from "../lib/importance";
 import TourLabel from "./TourLabel";
@@ -16,6 +16,12 @@ const ACTION_ICON_URLS = {
   monInc: "/action-icons/mon_inc.drawio.png",
   monDec: "/action-icons/mon_dec.drawio.png",
 };
+
+const ALIGN_ACTIONS: { value: AlignSelectionMode; label: string }[] = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "right", label: "Right" },
+];
 
 type Props = {
   showTourLabels?: boolean;
@@ -109,10 +115,15 @@ export default function ShapeFunctionsPanel({
   const [panLocked, setPanLocked] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [viewMode, setViewMode] = useState<"single" | "grid">("single");
+  const [alignMenuOpen, setAlignMenuOpen] = useState(false);
   const partial = useMemo(() => shapes[activePartialIdx] ?? shapes[0] ?? null, [shapes, activePartialIdx]);
   const interactionMode: "select" | "zoom" = panLocked || spacePanActive ? "zoom" : "select";
   const isPanning = interactionMode === "zoom";
   const smoothingMode = activeContinuousTool === "smooth";
+
+  useEffect(() => {
+    setAlignMenuOpen(false);
+  }, [activePartialIdx, selectedKnots.length, isPanning]);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -541,15 +552,36 @@ export default function ShapeFunctionsPanel({
                           <span className={styles.selectionActionLabel}>Interp.</span>
                         </button>
                       ) : null}
-                      <button
-                        className={styles.selectionActionButton}
-                        type="button"
-                        disabled={isPanning || selectedKnots.length === 0}
-                        onClick={alignSelection}
-                      >
-                        <img src={ACTION_ICON_URLS.align} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
-                        <span className={styles.selectionActionLabel}>Align</span>
-                      </button>
+                      <div className={`${styles.selectionActionButton} ${styles.selectionActionButtonWide}`}>
+                        <button
+                          className={styles.selectionActionMenuTrigger}
+                          type="button"
+                          disabled={isPanning || selectedKnots.length === 0}
+                          onClick={() => setAlignMenuOpen((open) => !open)}
+                        >
+                          <img src={ACTION_ICON_URLS.align} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
+                          <span className={styles.selectionActionLabel}>Align</span>
+                          <span className={styles.selectionActionHint}>Default: Left</span>
+                        </button>
+                        {alignMenuOpen ? (
+                          <div className={styles.selectionActionInlineChoices}>
+                            {ALIGN_ACTIONS.map(({ value, label }) => (
+                              <button
+                                key={value}
+                                className={`${styles.selectionActionChoice} ${value === "left" ? styles.selectionActionChoiceDefault : ""}`}
+                                type="button"
+                                disabled={isPanning || selectedKnots.length === 0}
+                                onClick={() => {
+                                  alignSelection(value);
+                                  setAlignMenuOpen(false);
+                                }}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                       {s.categories?.length ? (
                         <button
                           className={styles.selectionActionButton}

@@ -476,6 +476,18 @@ function GamLabPageContent() {
                   formatHistoryAction={formatHistoryAction}
                   formatHistoryDetail={formatHistoryDetail}
                   onDeleteHistoryEntry={deleteHistoryEntry}
+                  shapes={currentVersion?.shapes ?? []}
+                  trainData={trainData!}
+                  activeFeatureKey={partial?.key ?? null}
+                  activeKnots={partial ? knots : null}
+                  selectedPointIndices={selectedKnots}
+                  activeFeatureCategories={partial?.categories ?? null}
+                  onSelectFeature={(featureKey) => {
+                    const nextIdx = currentVersion?.shapes.findIndex((shape) => shape.key === featureKey) ?? -1;
+                    if (nextIdx >= 0) {
+                      setActivePartialIdx(nextIdx);
+                    }
+                  }}
                 />
                 <HelpCallout
                   target="sidebar"

@@ -30,7 +30,7 @@ const helpSteps = [
 
 export type HelpStep = (typeof helpSteps)[number];
 
-export function useHelpTour(setSidebarTab: (tab: "edit" | "history") => void) {
+export function useHelpTour(setSidebarTab: (tab: "edit" | "history" | "features") => void) {
   const [showHelp, setShowHelp] = useState(false);
   const [helpStepIndex, setHelpStepIndex] = useState(0);
 

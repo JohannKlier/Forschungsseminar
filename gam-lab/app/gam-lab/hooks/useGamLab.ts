@@ -107,7 +107,7 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   // Model/source selector and sidebar tab state.
   const [modelSource, setModelSource] = useState<string>("");
-  const [sidebarTab, setSidebarTab] = useState<"edit" | "history">("edit");
+  const [sidebarTab, setSidebarTab] = useState<"edit" | "history" | "features">("edit");
 
   // Convenience: latest version and active shape.
   const currentVersion = useMemo<ShapeFunctionVersion | null>(

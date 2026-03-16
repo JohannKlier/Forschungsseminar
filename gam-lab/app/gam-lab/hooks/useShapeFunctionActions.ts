@@ -1,6 +1,8 @@
 import { Dispatch, SetStateAction, useRef } from "react";
 import { ShapeFunction, KnotSet } from "../types";
 
+export type AlignSelectionMode = "left" | "center" | "right";
+
 type Params = {
   partial: ShapeFunction | null;
   knots: KnotSet;
@@ -58,15 +60,25 @@ export const useShapeFunctionActions = ({
     dragStartRef.current = null;
   };
 
-  const alignSelection = () => {
+  const alignSelection = (mode: AlignSelectionMode) => {
     if (!partial) return;
     const current = knotEdits[partial.key] ?? knots;
     const sel = selectedKnots.length ? selectedKnots : [];
     if (sel.length === 0) return;
-    const avgY = sel.reduce((sum, idx) => sum + (current.y[idx] ?? 0), 0) / sel.length;
-    const next = { x: [...current.x], y: current.y.map((val, idx) => (sel.includes(idx) ? avgY : val)) };
+    const sortedSelection = [...sel].sort((a, b) => (current.x[a] ?? 0) - (current.x[b] ?? 0));
+    const targetY = (() => {
+      if (mode === "left") {
+        return current.y[sortedSelection[0] ?? -1] ?? 0;
+      }
+      if (mode === "right") {
+        return current.y[sortedSelection[sortedSelection.length - 1] ?? -1] ?? 0;
+      }
+      return sel.reduce((sum, idx) => sum + (current.y[idx] ?? 0), 0) / sel.length;
+    })();
+    const selectedSet = new Set(sel);
+    const next = { x: [...current.x], y: current.y.map((val, idx) => (selectedSet.has(idx) ? targetY : val)) };
     const changed = next.y.some((v, i) => v !== current.y[i]);
-    if (changed) onRecordAction(partial.key, current, next, "align");
+    if (changed) onRecordAction(partial.key, current, next, `align-${mode}`);
     setKnots(next);
     setKnotEdits((prev) => ({ ...prev, [partial.key]: next }));
     setSelectedKnots((prev) => prev.filter((idx) => idx < next.x.length));

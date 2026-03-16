@@ -1,75 +1,87 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import styles from "./page.module.css";
 
 const pretrainedModel = "model:bike_hourly";
 
 export default function Home() {
+  const router = useRouter();
+  const [hasAgreed, setHasAgreed] = useState(false);
+  const [showAgreementWarning, setShowAgreementWarning] = useState(false);
   const studyHref = `/gam-lab?${new URLSearchParams({ model: pretrainedModel }).toString()}`;
 
   return (
     <div className={styles.page}>
       <main className={styles.main}>
         <section className={styles.hero}>
-          <span className={styles.eyebrow}>User Study</span>
           <h1 className={styles.title}>Improve model performance by editing shape functions.</h1>
           <p className={styles.subtitle}>
-            In this study, you will inspect a pretrained interpretable model, use your own knowledge of the problem
-            domain, and revise feature shape functions to produce better predictions.
+            This study is designed for people who know the problem domain well, even if they do not have a machine
+            learning background. Your job is to look at how the system currently behaves and correct patterns that do
+            not match your real-world expectations.
           </p>
-
-          <div className={styles.studyPanel}>
-            <div className={styles.studyLead}>
-              <p className={styles.sectionLabel}>What you will do</p>
-              <ul className={styles.studyList}>
-                <li>Inspect feature effects in a pretrained bike-sharing model.</li>
-                <li>Use your knowledge to identify shape functions that should behave differently.</li>
-                <li>Edit those effects and evaluate whether the model predictions improve.</li>
-              </ul>
-            </div>
-
-            <div className={styles.studyNote}>
-              <p className={styles.sectionLabel}>Before you start</p>
-              <p className={styles.noteText}>
-                The goal is to improve predictive performance through informed edits, not to retrain from scratch. The
-                session opens directly with a pretrained model so you can begin immediately.
-              </p>
-            </div>
+          <div className={styles.studyBrief}>
+            <p className={styles.sectionLabel}>About this interface</p>
+            <p className={styles.noteText}>
+              This interface is related to GAM Changer. Instead of asking you to tune technical model settings, it lets
+              you directly adjust simple curves that show how each input factor influences the prediction. You can use
+              your domain knowledge to decide when one of these curves looks wrong or incomplete.
+            </p>
+            <p className={styles.sectionLabel}>Your task</p>
+            <ul className={styles.studyList}>
+              <li>Inspect the pretrained bike-sharing model and look for feature effects that do not fit what you know about the domain.</li>
+              <li>Edit those curves so the model responds in a more sensible way.</li>
+              <li>Use the feedback in the interface to see whether your changes improve the predictions.</li>
+            </ul>
+            <p className={styles.sectionLabel}>Before you start</p>
+            <p className={styles.noteText}>
+              You will begin with a model that is already trained. You do not need to understand the underlying machine
+              learning method in detail. What matters here is whether the displayed relationships make sense from a
+              domain perspective, and whether your edits help the model make better predictions.
+            </p>
           </div>
 
+          <label
+            className={`${styles.agreement} ${showAgreementWarning && !hasAgreed ? styles.agreementWarning : ""}`}
+          >
+            <input
+              className={styles.agreementCheckbox}
+              type="checkbox"
+              checked={hasAgreed}
+              onChange={(event) => {
+                setHasAgreed(event.target.checked);
+                if (event.target.checked) {
+                  setShowAgreementWarning(false);
+                }
+              }}
+            />
+            <span className={styles.agreementCopy}>
+              I understand that my interactions in the study interface may be recorded for research purposes and that
+              the collected data will be used to analyze how participants edit and evaluate models.
+            </span>
+          </label>
+
           <div className={styles.actions}>
-            <Link className={styles.primary} href={studyHref}>
-              Start with pretrained model
-            </Link>
-            <Link className={styles.primary} href="/logs">
+            <button
+              type="button"
+              className={styles.primary}
+              onClick={() => {
+                if (hasAgreed) {
+                  router.push(studyHref);
+                  return;
+                }
+                setShowAgreementWarning(true);
+              }}
+            >
+              Get started
+            </button>
+            <Link className={styles.secondary} href="/logs">
               Inspect user logs
             </Link>
           </div>
-        </section>
-
-        <section className={styles.featureGrid}>
-          <article className={styles.card}>
-            <p className={styles.cardKicker}>Goal</p>
-            <h2 className={styles.cardTitle}>Improve the model</h2>
-            <p className={styles.cardText}>
-              Use the interface to turn your knowledge about the task into edits that improve predictive behavior.
-            </p>
-          </article>
-          <article className={styles.card}>
-            <p className={styles.cardKicker}>Task</p>
-            <h2 className={styles.cardTitle}>Revise feature effects</h2>
-            <p className={styles.cardText}>
-              Adjust shapes that appear unrealistic, incomplete, or unhelpful for accurate predictions.
-            </p>
-          </article>
-          <article className={styles.card}>
-            <p className={styles.cardKicker}>Output</p>
-            <h2 className={styles.cardTitle}>Deliver a stronger version</h2>
-            <p className={styles.cardText}>
-              Aim for a revised model that performs better and remains easy to explain through its shape functions.
-            </p>
-          </article>
         </section>
       </main>
     </div>

@@ -1,19 +1,43 @@
 .pageFrame {
+  --ink: #14213d;
+  --muted: #52627a;
+  --accent: #f25f4c;
+  --accent-deep: #c53f2f;
+  --paper: #fffdf8;
+  --panel: rgba(255, 253, 248, 0.94);
+  --line: rgba(20, 33, 61, 0.12);
+  --line-strong: rgba(20, 33, 61, 0.18);
+  --sidebar-width: 360px;
   height: 100vh;
   overflow: hidden;
-  background: #e2e8f0;
+  background:
+    linear-gradient(rgba(20, 33, 61, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20, 33, 61, 0.04) 1px, transparent 1px),
+    radial-gradient(circle at top left, rgba(242, 95, 76, 0.12), transparent 24%),
+    radial-gradient(circle at 85% 20%, rgba(0, 187, 249, 0.12), transparent 22%),
+    linear-gradient(135deg, #f0eadf 0%, #f7f3ea 48%, #edf3f6 100%);
+  background-size:
+    32px 32px,
+    32px 32px,
+    auto,
+    auto,
+    auto;
   display: flex;
   justify-content: flex-start;
-  padding: 0 360px 0 0;
+  padding: 0 var(--sidebar-width) 0 0;
+  color: var(--ink);
+  font-family: "Space Grotesk", "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
 }
 
 .page {
-  color: #0f172a;
+  color: var(--ink);
   padding: 0.75rem 1rem;
-  max-width: none;
   width: 100%;
+  max-width: none;
+  flex: 1 1 auto;
   background: transparent;
   border-radius: 0;
+  border: none;
   box-shadow: none;
   display: flex;
   flex-direction: column;
@@ -127,13 +151,15 @@
 
 .logo {
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  height: 32px;
-  min-width: 120px;
-  font-size: 1rem;
+  justify-content: flex-start;
+  height: auto;
+  min-width: 0;
+  font-size: 1.02rem;
+  text-transform: uppercase;
+  color: var(--ink);
 }
 
 .toolbarGroup {
@@ -204,11 +230,12 @@
 
 .datasetSelect {
   padding: 0.65rem 0.8rem;
-  border-radius: 0.75rem;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border-radius: 0.35rem;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.72);
   font-size: 0.95rem;
-  color: #0f172a;
+  color: var(--ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
 }
 
 .datasetInfo {
@@ -356,7 +383,9 @@
   gap: 0.5rem;
   flex: 1 1 0;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
+  padding: 0;
 }
 
 .datasetBanner {
@@ -364,11 +393,14 @@
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 0.5rem 1rem;
-  border-radius: 0.75rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  padding: 1rem 1.2rem;
+  border-radius: 0.35rem;
+  background:
+    linear-gradient(90deg, rgba(242, 95, 76, 0.08), transparent 20%),
+    rgba(255, 255, 255, 0.64);
+  border: 1px solid var(--line-strong);
   flex-shrink: 0;
+  box-shadow: 0 12px 28px rgba(20, 33, 61, 0.06);
 }
 
 .bannerActions {
@@ -386,39 +418,42 @@
 
 .datasetLabel {
   margin: 0;
-  font-size: 0.7rem;
-  letter-spacing: 0.15em;
+  font-size: 0.72rem;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .datasetTitle {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 1.12rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--ink);
 }
 
 .selectModelButton {
-  border: 1px solid #94a3b8;
-  background: #ffffff;
-  color: #0f172a;
-  border-radius: 0.75rem;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--ink);
+  border-radius: 0.35rem;
   padding: 0.6rem 1rem;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
   white-space: nowrap;
+  box-shadow: 0 10px 24px rgba(20, 33, 61, 0.06);
 }
 
 .helpButton {
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
-  border-radius: 0.75rem;
+  border: 1px solid rgba(197, 63, 47, 0.45);
+  background: linear-gradient(135deg, var(--accent) 0%, #ff8a5b 100%);
+  color: #ffffff;
+  border-radius: 0.35rem;
   padding: 0.6rem 1rem;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
+  box-shadow: 0 12px 28px rgba(242, 95, 76, 0.22);
 }
 
 .helpOverlay {
@@ -437,6 +472,7 @@
 .shapePanelSlot {
   flex: 1 1 0;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -445,7 +481,7 @@
   position: fixed;
   top: 0;
   right: 0;
-  width: 360px;
+  width: var(--sidebar-width);
   height: 100vh;
 }
 
@@ -838,11 +874,12 @@
 }
 
 .panel {
-  background: #ffffff;
-  border-radius: 1.1rem;
-  border: 1px solid #e2e8f0;
-  padding: 0.75rem 1rem;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.06);
+  background: rgba(255, 255, 255, 0.72);
+  border-radius: 0.35rem;
+  border: 1px solid var(--line-strong);
+  border-top: 4px solid rgba(242, 95, 76, 0.76);
+  padding: 1rem 1.15rem;
+  box-shadow: 0 18px 36px rgba(20, 33, 61, 0.06);
 }
 
 .panelFillHeight {
@@ -873,7 +910,7 @@
 
 .trainingIntro {
   margin: 0;
-  color: #64748b;
+  color: var(--muted);
   font-size: 0.92rem;
   max-width: 34rem;
 }
@@ -901,8 +938,8 @@
   font-size: 0.75rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #64748b;
+  letter-spacing: 0.14em;
+  color: var(--muted);
 }
 
 .trainingToggleRow {
@@ -917,9 +954,9 @@
   align-items: center;
   gap: 0.7rem;
   padding: 0.75rem 0.9rem;
-  border-radius: 0.9rem;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid var(--line);
   cursor: pointer;
   flex: 1 1 280px;
   min-width: 0;
@@ -1021,7 +1058,7 @@
 
 .trainingCompactSummary {
   margin: 0;
-  color: #64748b;
+  color: var(--muted);
   font-size: 0.86rem;
 }
 
@@ -1031,7 +1068,7 @@
   gap: 0.75rem;
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line);
 }
 
 .panelTitleRow {
@@ -1078,10 +1115,10 @@
 .panelToggle {
   display: inline-flex;
   align-items: center;
-  border-radius: 0.75rem;
-  background: #f1f5f9;
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.62);
   padding: 0.2rem;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--line);
   overflow: hidden;
   height: 38px;
   gap: 0.35rem;
@@ -1089,9 +1126,9 @@
 
 .panelToggleButton {
   border: none;
-  background: #e2e8f0;
-  color: #475569;
-  border-radius: 0.55rem;
+  background: rgba(20, 33, 61, 0.07);
+  color: var(--muted);
+  border-radius: 0.25rem;
   padding: 0 0.9rem;
   font-size: 0.9rem;
   font-weight: 700;
@@ -1102,9 +1139,9 @@
 
 
 .panelToggleButtonActive {
-  background: #0f172a;
+  background: var(--ink);
   color: #ffffff;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 6px 14px rgba(20, 33, 61, 0.18);
 }
 
 .lockButton {
@@ -1114,9 +1151,10 @@
 .panelEyebrow {
   margin: 0;
   text-transform: uppercase;
-  letter-spacing: 0.15em;
-  font-size: 0.75rem;
-  color: #94a3b8;
+  letter-spacing: 0.18em;
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .panelEyebrowRow {
@@ -1135,24 +1173,25 @@
 .panelTitle {
   margin: 0.35rem 0 0;
   font-size: 1.15rem;
+  color: var(--ink);
 }
 
 .panelButton {
-  border: 1px solid #cbd5f5;
-  border-radius: 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.35rem;
   padding: 0 0.85rem;
-  background: #f8fafc;
-  color: #1e3a8a;
-  font-weight: 600;
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--ink);
+  font-weight: 700;
   font-size: 0.9rem;
   line-height: 1;
   cursor: pointer;
-  box-shadow: none;
+  box-shadow: 0 8px 18px rgba(20, 33, 61, 0.05);
   height: 34px;
 }
 
 .panelButton:hover {
-  background: #eef2ff;
+  background: rgba(255, 255, 255, 0.9);
 }
 
 @media (max-width: 720px) {
@@ -1472,42 +1511,44 @@
 }
 
 .settingsRail {
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--panel);
+  color: var(--ink);
   border-radius: 0;
   padding: 1.6rem 1.4rem 1.6rem;
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
   border: none;
+  border-top: none;
   box-shadow: none;
   position: fixed;
   top: 0;
   right: 0;
-  width: 360px;
-  max-width: 360px;
+  width: var(--sidebar-width);
+  max-width: var(--sidebar-width);
   justify-self: end;
   height: 100vh;
   z-index: 10;
+  backdrop-filter: none;
 }
 
 .sidebarHeader {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding-bottom: 0.35rem;
-  border-bottom: 1px solid #e2e8f0;
-  height: 56px;
+  justify-content: flex-start;
+  padding: 0.1rem 0 0.65rem;
+  border-bottom: 1px solid var(--line);
+  height: auto;
 }
 
 .sidebarTabs {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0.35rem;
   padding: 0.3rem;
-  border-radius: 0.75rem;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  border-radius: 0.35rem;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid var(--line);
   width: 100%;
   align-self: stretch;
   height: 50px;
@@ -1515,11 +1556,11 @@
 
 .sidebarTabButton {
   border: none;
-  background: #e2e8f0;
-  color: #475569;
-  border-radius: 0.6rem;
+  background: rgba(20, 33, 61, 0.07);
+  color: var(--muted);
+  border-radius: 0.25rem;
   padding: 0.45rem 0.8rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
   cursor: pointer;
   text-align: center;
@@ -1527,9 +1568,9 @@
 }
 
 .sidebarTabButtonActive {
-  background: #0f172a;
+  background: var(--ink);
   color: #ffffff;
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 6px 14px rgba(20, 33, 61, 0.18);
 }
 
 .historyList {
@@ -1553,12 +1594,165 @@
   display: none;
 }
 
+.featureDistributionScroll {
+  max-height: 70vh;
+  overflow: auto;
+  padding-right: 0.2rem;
+  scrollbar-width: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  flex: 1 1 auto;
+  padding-top: 0.6rem;
+}
+
+.featureDistributionScroll::-webkit-scrollbar {
+  display: none;
+}
+
+.featureDistributionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.featureDistributionCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  padding: 0.55rem 0 0.75rem;
+  border: none;
+  border-bottom: 1px solid rgba(20, 33, 61, 0.1);
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, opacity 120ms ease;
+}
+
+.featureDistributionCard:hover {
+  border-bottom-color: rgba(197, 63, 47, 0.32);
+  background: transparent;
+}
+
+.featureDistributionCardActive {
+  border-bottom-color: rgba(20, 33, 61, 0.1);
+  box-shadow: none;
+  background: transparent;
+}
+
+.featureDistributionHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.featureDistributionName {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.featureDistributionHistogram {
+  height: 48px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: end;
+  gap: 1px;
+  padding: 0.05rem 0 0;
+  border-radius: 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(20, 33, 61, 0.12);
+}
+
+.featureDistributionBin {
+  position: relative;
+  display: flex;
+  align-items: end;
+  min-height: 2px;
+  border-radius: 0;
+  background: rgba(149, 184, 220, 0.62);
+  overflow: hidden;
+}
+
+.featureDistributionBinSelected {
+  position: absolute;
+  inset: auto 0 0 0;
+  min-height: 2px;
+  border-radius: 0;
+  background: rgba(244, 191, 117, 0.72);
+}
+
+.featureDistributionRange {
+  display: flex;
+  justify-content: space-between;
+  color: rgba(82, 98, 122, 0.88);
+  font-size: 0.6rem;
+  font-weight: 600;
+}
+
+.featureDistributionBars {
+  height: 50px;
+  display: flex;
+  align-items: end;
+  gap: 0.08rem;
+  padding: 0.05rem 0 0;
+  border-radius: 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid rgba(20, 33, 61, 0.12);
+}
+
+.featureDistributionBarGroup {
+  min-width: 0;
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: end;
+  gap: 0.2rem;
+  height: 100%;
+}
+
+.featureDistributionBar {
+  position: relative;
+  width: 100%;
+  min-height: 2px;
+  border-radius: 0;
+  background: rgba(149, 184, 220, 0.62);
+  overflow: hidden;
+}
+
+.featureDistributionBarSelected {
+  position: absolute;
+  inset: auto 0 0 0;
+  min-height: 2px;
+  border-radius: 0;
+  background: rgba(244, 191, 117, 0.72);
+}
+
+.featureDistributionBarLabel {
+  width: 100%;
+  color: rgba(82, 98, 122, 0.9);
+  font-size: 0.52rem;
+  font-weight: 600;
+  line-height: 1.1;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .historyGroup {
   display: flex;
   flex-direction: column;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.62);
 }
 
 .historyGroupHeader {
@@ -1566,14 +1760,16 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.35rem 0.6rem;
-  background: #f1f5f9;
+  background:
+    linear-gradient(90deg, rgba(242, 95, 76, 0.07), transparent 32%),
+    rgba(255, 255, 255, 0.62);
   gap: 0.5rem;
 }
 
 .historyGroupLabel {
   font-size: 0.72rem;
-  font-weight: 600;
-  color: #475569;
+  font-weight: 700;
+  color: var(--ink);
   letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
@@ -1582,7 +1778,7 @@
 
 .historyGroupCount {
   font-size: 0.68rem;
-  color: #94a3b8;
+  color: var(--muted);
   flex-shrink: 0;
 }
 
@@ -1591,7 +1787,7 @@
   flex-direction: column;
   gap: 0.25rem;
   padding: 0.3rem 0.6rem;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line);
 }
 
 .historyItem:first-of-type {
@@ -1612,7 +1808,7 @@
 
 .historyDetail {
   font-size: 0.78rem;
-  color: #94a3b8;
+  color: var(--muted);
 }
 
 .historyDeleteButton {
@@ -1632,16 +1828,16 @@
 }
 
 .historyDeleteButton:hover {
-  background: #eef2ff;
+  background: rgba(242, 95, 76, 0.12);
 }
 
 .settingsLabel {
   margin: 0;
   font-weight: 700;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  font-size: 0.85rem;
-  color: #475569;
+  font-size: 0.72rem;
+  color: var(--muted);
 }
 
 .settingsSection {
@@ -1649,12 +1845,42 @@
   flex-direction: column;
   gap: 0.35rem;
   padding: 0.55rem 0;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line);
 }
 
 .settingsSection:first-of-type {
   border-top: none;
   padding-top: 0;
+}
+
+@media (max-width: 1100px) {
+  .pageFrame {
+    height: auto;
+    min-height: 100vh;
+    overflow: auto;
+    padding: 1rem;
+  }
+
+  .page {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    max-width: none;
+  }
+
+  .settingsRail {
+    position: static;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    margin-top: 1rem;
+  }
+
+  .sidebarTourTarget {
+    position: static;
+    width: auto;
+    height: auto;
+  }
 }
 
 .plotWithActionsRow {
@@ -1739,6 +1965,78 @@
   white-space: nowrap;
 }
 
+.selectionActionButtonWide {
+  grid-column: 1 / -1;
+  cursor: default;
+  position: relative;
+}
+
+.selectionActionButtonWide:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.selectionActionMenuTrigger {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.18rem;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.selectionActionMenuTrigger:disabled {
+  cursor: not-allowed;
+}
+
+.selectionActionHint {
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.selectionActionInlineChoices {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.25rem;
+  width: 100%;
+  margin-top: 0.2rem;
+}
+
+.selectionActionChoice {
+  min-width: 0;
+  padding: 0.28rem 0.2rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.45rem;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+}
+
+.selectionActionChoice:hover {
+  border-color: #0ea5e9;
+  background: #e0f2fe;
+  color: #0f172a;
+}
+
+.selectionActionChoiceDefault {
+  border-color: #0ea5e9;
+  background: #f0f9ff;
+}
+
+.selectionActionChoice:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .panButton {
   width: 100%;
   padding: 0.3rem 0.5rem;
@@ -1807,7 +2105,7 @@
 .shapePanelFooter {
   margin-top: 0.4rem;
   padding-top: 0.4rem;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--line);
   flex-shrink: 0;
 }
 
