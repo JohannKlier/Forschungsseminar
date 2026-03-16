@@ -990,7 +990,10 @@ export default function VisxShapeEditor({
           rafIdRef.current = window.requestAnimationFrame(() => {
             rafIdRef.current = null;
             if (pendingDragRef.current) {
-              applyDragPreview(pendingDragRef.current);
+              const next = { x: [...pendingDragRef.current.x], y: [...pendingDragRef.current.y] };
+              knotsRef.current = next;
+              applyDragPreview(next);
+              onKnotChangeRef.current(next);
             }
           });
         }

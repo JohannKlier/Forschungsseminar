@@ -464,16 +464,53 @@
   background: rgba(255, 255, 255, 0.96);
 }
 
-.tourLabelAnchor {
-  position: relative;
+.tourFocus.panelFillHeight {
+  overflow: visible;
 }
 
-.tourLabel {
+.tourLabelAnchor {
+  position: relative;
+  z-index: 80;
+}
+
+.tourLabelWrap {
   position: absolute;
-  top: -0.45rem;
+  z-index: 90;
+}
+
+.tourLabelPlacementTopLeft {
+  top: 0.2rem;
   left: 0.5rem;
-  z-index: 62;
-  padding: 0.15rem 0.55rem;
+}
+
+.tourLabelPlacementTopRight {
+  top: 0.2rem;
+  right: 0.5rem;
+}
+
+.tourLabelPlacementMidRight {
+  top: 0.75rem;
+  right: -0.6rem;
+}
+
+.tourLabelPlacementBottomLeft {
+  bottom: -0.8rem;
+  left: 0.5rem;
+}
+
+.tourLabelPlacementBottomRight {
+  bottom: -0.8rem;
+  right: 0.5rem;
+}
+
+.tourLabelButton {
+  position: relative;
+  z-index: 91;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border: 0;
   border-radius: 999px;
   background: linear-gradient(135deg, #0ea5e9, #2563eb);
   color: #ffffff;
@@ -483,7 +520,122 @@
   white-space: nowrap;
   line-height: 1.4;
   box-shadow: 0 2px 8px rgba(14, 165, 233, 0.35);
+  cursor: pointer;
+}
+
+.tourLabelButtonActive {
+  box-shadow:
+    0 10px 24px rgba(14, 165, 233, 0.24),
+    0 0 0 2px rgba(255, 255, 255, 0.72);
+}
+
+.tourLabelGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.tourLabelPopover {
+  position: absolute;
+  z-index: 73;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  min-width: 15rem;
+  max-width: min(18rem, calc(100vw - 2rem));
+  padding: 0.75rem 0.85rem 0.8rem;
+  border: 1px solid rgba(147, 197, 253, 0.9);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.18);
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top left;
   pointer-events: none;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.tourLabelPopoverFixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 90;
+}
+
+.tourLabelPopoverAbove {
+  transform: translateY(6px) scale(0.98);
+}
+
+.tourLabelPlacementTopRight .tourLabelPopover,
+.tourLabelPlacementMidRight .tourLabelPopover,
+.tourLabelPlacementBottomRight .tourLabelPopover {
+  left: auto;
+  right: 0;
+  transform-origin: top right;
+}
+
+.tourLabelPlacementBottomLeft .tourLabelPopover,
+.tourLabelPlacementBottomRight .tourLabelPopover {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+}
+
+.tourLabelPlacementBottomLeft .tourLabelPopover {
+  transform-origin: bottom left;
+}
+
+.tourLabelPlacementBottomRight .tourLabelPopover {
+  transform-origin: bottom right;
+}
+
+.tourLabelPopoverOpen {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.tourLabelTitle {
+  margin: 0 0 0.25rem;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.tourLabelDescription {
+  margin: 0;
+  color: #334155;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.tourLabelList {
+  margin: 0.55rem 0 0;
+  padding: 0 0 0 1rem;
+  color: #475569;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.tourLabelListItem + .tourLabelListItem {
+  margin-top: 0.28rem;
+}
+
+@media (max-width: 900px) {
+  .tourLabelPlacementMidRight {
+    top: 0.2rem;
+    right: 0.5rem;
+  }
+
+  .tourLabelPopover {
+    max-width: min(16rem, calc(100vw - 2rem));
+  }
 }
 
 .helpCallout {
@@ -1618,7 +1770,8 @@
 }
 
 .actionsScroll {
-  overflow: auto;
+  overflow-x: visible;
+  overflow-y: auto;
   padding: 0.1rem;
   scrollbar-width: none;
   overscroll-behavior: contain;

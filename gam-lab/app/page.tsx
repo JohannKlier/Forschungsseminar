@@ -42,6 +42,9 @@ export default function Home() {
             <Link className={styles.primary} href={studyHref}>
               Start with pretrained model
             </Link>
+            <Link className={styles.primary} href="/logs">
+              Inspect user logs
+            </Link>
           </div>
         </section>
 

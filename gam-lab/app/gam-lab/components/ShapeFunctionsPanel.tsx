@@ -6,6 +6,7 @@ import CategoricalShapePlot from "./CategoricalShapePlot";
 import { useShapeFunctionActions } from "../hooks/useShapeFunctionActions";
 import ShapeFunctionsGridView from "./ShapeFunctionsGridView";
 import { computeFeatureImportance } from "../lib/importance";
+import TourLabel from "./TourLabel";
 
 type ContinuousActionTool = "drag" | "smooth";
 
@@ -234,7 +235,18 @@ export default function ShapeFunctionsPanel({
               </button>
             ) : null}
             <div className={`${styles.panelToggle} ${styles.tourLabelAnchor}`}>
-              {showTourLabels ? <span className={styles.tourLabel}>View mode</span> : null}
+              {showTourLabels ? (
+                <TourLabel
+                  label="View mode"
+                  title="Choose the editing lens"
+                  description="Switch between focused editing of one shape and a scan across all shapes."
+                  details={[
+                    "Single view shows the active feature with the full editor and tool panel.",
+                    "Grid view helps compare many feature shapes quickly and jump into one with a click.",
+                  ]}
+                  placement="top-right"
+                />
+              ) : null}
               <button
                 type="button"
                 className={`${styles.panelToggleButton} ${viewMode === "single" ? styles.panelToggleButtonActive : ""}`}
@@ -330,7 +342,18 @@ export default function ShapeFunctionsPanel({
         return (
           <>
             <div className={`${styles.featureNavCentered} ${styles.tourLabelAnchor}`}>
-              {showTourLabels ? <span className={styles.tourLabel}>Feature selector</span> : null}
+              {showTourLabels ? (
+                <TourLabel
+                  label="Feature selector"
+                  title="Move between features"
+                  description="The selector and arrows change the active feature without leaving the editor."
+                  details={[
+                    "Each option shows whether the feature is continuous or categorical.",
+                    "The I value is the normalized importance score used for quick prioritization.",
+                  ]}
+                  placement="top-left"
+                />
+              ) : null}
               <button
                 type="button"
                 className={styles.navButtonInline}
@@ -363,11 +386,35 @@ export default function ShapeFunctionsPanel({
             </div>
             <div className={styles.plotWithActionsRow}>
               <div className={`${styles.plotArea} ${styles.tourLabelAnchor}`}>
-                {showTourLabels ? <span className={styles.tourLabel}>Plot</span> : null}
+                {showTourLabels ? (
+                  <TourLabel
+                    label="Plot"
+                    title="Edit directly on the shape"
+                    description="Most edits happen in the plot itself: drag, select, smooth, or inspect the current curve against earlier states."
+                    details={[
+                      "Continuous features let you drag knots and apply selection-based actions.",
+                      "Categorical features update bar heights directly.",
+                      "Initial, previous, and current lines help you see what changed.",
+                    ]}
+                    placement="top-left"
+                  />
+                ) : null}
                 {plot}
               </div>
               <div className={`${styles.actionsScroll} ${styles.tourLabelAnchor}`}>
-                {showTourLabels ? <span className={styles.tourLabel}>Tools</span> : null}
+                {showTourLabels ? (
+                <TourLabel
+                  label="Tools"
+                  title="Adjust how edits behave"
+                  description="The tool rail controls navigation, drag or smoothing behavior, and selection-based operations."
+                    details={[
+                      "Pan mode changes the interaction from editing to navigation.",
+                      "Continuous features expose drag and smooth settings.",
+                      "Selection actions apply constraints or bulk edits to the current selection.",
+                    ]}
+                  placement="top-right"
+                />
+              ) : null}
                 <div className={styles.actionsStack}>
                   <div className={styles.actionsGroup}>
                     <span className={styles.actionsGroupLabel}>navigate</span>
@@ -542,7 +589,18 @@ export default function ShapeFunctionsPanel({
               </div>
             </div>
             <div className={`${styles.shapePanelFooter} ${styles.tourLabelAnchor}`}>
-              {showTourLabels ? <span className={styles.tourLabel}>Undo / Save</span> : null}
+              {showTourLabels ? (
+                <TourLabel
+                  label="Undo / Save"
+                  title="Commit or revisit edits"
+                  description="Use these actions to step backward, restore a change, or save the edited model snapshot."
+                  details={[
+                    "Undo and redo operate on the recorded edit history.",
+                    "Save writes the current edited state as a reusable model snapshot.",
+                  ]}
+                  placement="top-right"
+                />
+              ) : null}
               <div className={styles.shapeEditActions}>
                 <button type="button" className={styles.undoButton} onClick={onUndo} disabled={!canUndo}>
                   Undo

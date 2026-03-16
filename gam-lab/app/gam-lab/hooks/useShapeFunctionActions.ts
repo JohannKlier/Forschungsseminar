@@ -36,6 +36,7 @@ export const useShapeFunctionActions = ({
     if (!partial) return;
     setKnots(next);
     setKnotEdits((prev) => ({ ...prev, [partial.key]: next }));
+    onCommitEdits(partial.key, next);
     setSelectedKnots((prev) => prev.filter((idx) => idx < next.x.length));
   };
 
@@ -125,6 +126,7 @@ export const useShapeFunctionActions = ({
     catPendingRef.current = next;
     setKnots(next);
     setKnotEdits((prev) => ({ ...prev, [featureKey]: next }));
+    onCommitEdits(featureKey, next);
     setSelectedKnots([idxSel]);
   };
 
@@ -146,6 +148,7 @@ export const useShapeFunctionActions = ({
     catPendingRef.current = next;
     setKnots(next);
     setKnotEdits((prev) => ({ ...prev, [featureKey]: next }));
+    onCommitEdits(featureKey, next);
     setSelectedKnots(filtered);
   };
 

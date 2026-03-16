@@ -1,6 +1,7 @@
 import { Dispatch, SetStateAction, useEffect, useRef } from "react";
 import styles from "../page.module.css";
 import { StatItem } from "../types";
+import TourLabel from "./TourLabel";
 
 type HistoryEntry = { featureKey: string; action: string; ts: number; changes: { x: number; before?: number; after?: number; delta?: number }[] };
 
@@ -97,7 +98,18 @@ export default function SidebarPanel({
         <span className={styles.logo}>GAM Lab</span>
       </div>
       <div className={`${styles.sidebarTabs} ${styles.tourLabelAnchor}`}>
-        {showTourLabels ? <span className={styles.tourLabel}>Tabs</span> : null}
+        {showTourLabels ? (
+          <TourLabel
+            label="Tabs"
+            title="Switch the sidebar mode"
+            description="The sidebar has one mode for live feedback and another for reviewing edits."
+            details={[
+              "Edit shows the stats summary for the current model state.",
+              "History lists recorded edit actions and lets you prune them.",
+            ]}
+            placement="top-left"
+          />
+        ) : null}
         <button
           type="button"
           className={`${styles.sidebarTabButton} ${sidebarTab === "edit" ? styles.sidebarTabButtonActive : ""}`}
@@ -117,7 +129,19 @@ export default function SidebarPanel({
         <>
           <div className={styles.settingsSection}>
             <div className={styles.tourLabelAnchor}>
-              {showTourLabels ? <span className={styles.tourLabel}>Statistics</span> : null}
+              {showTourLabels ? (
+                <TourLabel
+                  label="Statistics"
+                  title="Read model quality at a glance"
+                  description="These bars compare the original model, the latest trained or refit version, and the current live edited state."
+                  details={[
+                    "Initial comes from the very first training run.",
+                    "Latest comes from the most recent train or refit result.",
+                    "Current is recomputed in the frontend while you edit.",
+                  ]}
+                  placement="top-left"
+                />
+              ) : null}
             <p className={styles.settingsLabel}>Stats</p>
             <div className={styles.statsLegend}>
               <span className={styles.statsLegendItem}>
@@ -191,7 +215,18 @@ export default function SidebarPanel({
         </>
       ) : (
         <div className={styles.tourLabelAnchor}>
-          {showTourLabels ? <span className={styles.tourLabel}>Edit history</span> : null}
+          {showTourLabels ? (
+            <TourLabel
+              label="Edit history"
+              title="Inspect and remove recorded edits"
+              description="Every recorded action is grouped by feature so you can understand how the current state was built."
+              details={[
+                "Deleting an older history item also removes later entries for the same feature.",
+                "That cascade happens because later edits depend on the earlier state.",
+              ]}
+              placement="top-left"
+            />
+          ) : null}
           <HistoryPanel
             history={history}
             formatHistoryAction={formatHistoryAction}

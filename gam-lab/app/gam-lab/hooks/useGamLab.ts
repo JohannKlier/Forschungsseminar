@@ -104,9 +104,6 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [models, setModels] = useState<Models | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const workerDebounceRef = useRef<number | null>(null);
-  // Suppress worker result application while the user is dragging/interacting.
-  const isInteractingRef = useRef(false);
-  const pendingModelsRef = useRef<Models | null>(null);
 
   // Model/source selector and sidebar tab state.
   const [modelSource, setModelSource] = useState<string>("");
@@ -667,17 +664,9 @@ export const useGamLab = (options: InitOptions = {}) => {
     });
   };
 
-  // Interaction gate: while dragging/smoothing, buffer worker results and apply them on release.
-  const notifyInteractionStart = () => {
-    isInteractingRef.current = true;
-  };
-  const notifyInteractionEnd = () => {
-    isInteractingRef.current = false;
-    if (pendingModelsRef.current) {
-      setModels(pendingModelsRef.current);
-      pendingModelsRef.current = null;
-    }
-  };
+  // Keep the interaction callbacks stable; worker results now apply live during drags.
+  const notifyInteractionStart = () => {};
+  const notifyInteractionEnd = () => {};
 
   const rebuildEditsFromHistory = (entries: typeof history) => {
     const nextEdits: Record<string, KnotSet> = {};
@@ -770,23 +759,29 @@ export const useGamLab = (options: InitOptions = {}) => {
   const deleteHistoryEntry = (index: number) => {
     const featureKey = history[index]?.featureKey;
     const entry = history[index];
+    if (!featureKey || !entry) return;
+    const laterEntriesForFeature = history.filter((e, i) => i > index && e.featureKey === featureKey).length;
+    const message = laterEntriesForFeature > 0
+      ? `Delete this history entry for "${featureKey}"?\n\nThis will also delete ${laterEntriesForFeature} following entr${laterEntriesForFeature === 1 ? "y" : "ies"} for the same feature, because older history changes are the base for later ones.`
+      : `Delete this history entry for "${featureKey}"?`;
+    if (typeof window !== "undefined" && !window.confirm(message)) {
+      return;
+    }
     // Remove the entry and all subsequent entries for the same feature.
     const nextHistory = history.filter((e, i) => i !== index && !(i > index && e.featureKey === featureKey));
     const removed = history.length - nextHistory.length;
     const nextCursor = Math.max(0, historyCursor - (historyCursor > index ? removed : 0));
-    if (entry) {
-      logEvent({
-        category: "history",
-        action: "history.deleted",
-        featureKey: entry.featureKey,
-        detail: {
-          entryIndex: index,
-          removedEntries: removed,
-          editAction: entry.action,
-          summary: summarizeChanges(entry.changes),
-        },
-      });
-    }
+    logEvent({
+      category: "history",
+      action: "history.deleted",
+      featureKey: entry.featureKey,
+      detail: {
+        entryIndex: index,
+        removedEntries: removed,
+        editAction: entry.action,
+        summary: summarizeChanges(entry.changes),
+      },
+    });
     setHistory(nextHistory);
     applyHistoryCursor(nextCursor, nextHistory);
   };
@@ -796,6 +791,10 @@ export const useGamLab = (options: InitOptions = {}) => {
   // trainX for scatter/contributions and intercept from the version.
   useEffect(() => {
     if (!currentVersion || !trainData) {
+      if (workerDebounceRef.current != null) {
+        window.clearTimeout(workerDebounceRef.current);
+        workerDebounceRef.current = null;
+      }
       setModels(null);
       return;
     }
@@ -803,14 +802,10 @@ export const useGamLab = (options: InitOptions = {}) => {
     if (!workerRef.current) {
       workerRef.current = new Worker(new URL("../workers/modelWorker.ts", import.meta.url));
       workerRef.current.onmessage = (e) => {
-        if (isInteractingRef.current) {
-          pendingModelsRef.current = e.data;
-        } else {
-          setModels(e.data);
-        }
+        setModels(e.data);
       };
     }
-    if (workerDebounceRef.current) {
+    if (workerDebounceRef.current != null) {
       window.clearTimeout(workerDebounceRef.current);
     }
     workerDebounceRef.current = window.setTimeout(() => {
@@ -821,8 +816,14 @@ export const useGamLab = (options: InitOptions = {}) => {
         baselineKnots,
         knotEdits: committedEdits,
       });
-    }, 120);
-    return () => {};
+      workerDebounceRef.current = null;
+    }, 40);
+    return () => {
+      if (workerDebounceRef.current != null) {
+        window.clearTimeout(workerDebounceRef.current);
+        workerDebounceRef.current = null;
+      }
+    };
   }, [currentVersion, trainData, modelInfo, baselineKnots, committedEdits]);
 
   // Compute dashboard metrics showing 3 bars: initial / latest / current.
