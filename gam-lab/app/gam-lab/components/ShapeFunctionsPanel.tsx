@@ -9,6 +9,7 @@ import { computeFeatureImportance } from "../lib/importance";
 import TourLabel from "./TourLabel";
 
 type ContinuousActionTool = "drag" | "smooth";
+const EMPTY_FIXED_LINES: Array<{ id: string; knots: KnotSet }> = [];
 
 const ACTION_ICON_URLS = {
   align: "/action-icons/align.drawio.png",
@@ -327,7 +328,7 @@ export default function ShapeFunctionsPanel({
             key={s.key}
             knots={baseKnots}
             baseline={baselineKnots[s.key]}
-            fixedLines={fixedLinesByFeature[s.key] ?? []}
+            fixedLines={fixedLinesByFeature[s.key] ?? EMPTY_FIXED_LINES}
             scatterX={scatterX}
             featureKey={s.key}
             interactionMode={interactionMode}
