@@ -1,5 +1,6 @@
 import styles from "../page.module.css";
 import { KnotSet, ShapeFunction } from "../types";
+import { InteractionHeatmap } from "./InteractionHeatmap";
 
 type Props = {
   shapes: ShapeFunction[];
@@ -51,6 +52,15 @@ export default function ShapeFunctionsGridView({ shapes, baselineKnots, knotEdit
           };
         const baseline = baselineKnots[shape.key] ?? current;
         const title = shape.label || shape.key || `x${idx + 1}`;
+
+        if (shape.editableZ) {
+          return (
+            <button key={shape.key} type="button" className={styles.gridCard} onClick={() => onSelectFeature(idx)}>
+              <div className={styles.gridCardTitle}>{title}</div>
+              <InteractionHeatmap shape={shape} width={CHART_W} height={CHART_H + 30} />
+            </button>
+          );
+        }
 
         if (shape.categories && shape.categories.length) {
           const categories = shape.categories;

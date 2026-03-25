@@ -3,14 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import PredictionFitPlot from "../components/PredictionFitPlot";
 import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
-import { type DragCurve, type SmoothingAlgorithm } from "../components/VisxShapeEditor";
 import SidebarPanel from "../components/SidebarPanel";
+import FeatureModePanel from "../components/FeatureModePanel";
 import styles from "../page.module.css";
 import trainStyles from "./train.module.css";
 import { useGamLab } from "../hooks/useGamLab";
 import { useSidebarActions } from "../hooks/useSidebarActions";
+import { useToolSettings } from "../hooks/useToolSettings";
 import { useAuditLogger } from "../hooks/useAuditLogger";
 import { useUiAuditLogger } from "../hooks/useUiAuditLogger";
 
@@ -44,8 +44,6 @@ export default function TrainPage() {
     setElmAlpha,
     earlyStopping,
     setEarlyStopping,
-    scaleY,
-    setScaleY,
     selectedDataset,
     baselineKnots,
     fixedLinesByFeature,
@@ -58,10 +56,11 @@ export default function TrainPage() {
     activePartialIdx,
     setActivePartialIdx,
     stats,
-    models,
     lockedFeatures,
+    featureModes,
+    setFeatureMode,
     handleSave,
-    manualTrain,
+    train,
     manualRefitFromEdits,
     toggleFeatureLock,
     sidebarTab,
@@ -89,29 +88,12 @@ export default function TrainPage() {
     });
   }, [logEvent, pathname, search]);
 
-  const { formatHistoryAction, formatHistoryDetail, applyMonotonic, addPointsInSelection } = useSidebarActions({
-    partial,
-    knotEdits,
-    knots,
-    selectedKnots,
-    setKnots,
-    setKnotEdits,
-    setSelectedKnots,
-    recordAction,
-    commitEdits,
-    history,
-    baselineKnots,
-  });
+  const { formatHistoryAction, formatHistoryDetail } = useSidebarActions({ history });
 
-  const [activeContinuousTool, setActiveContinuousTool] = useState<"drag" | "smooth">("drag");
-  const [dragFalloffRadius, setDragFalloffRadius] = useState(4);
-  const [dragRangeBoost, setDragRangeBoost] = useState(1);
-  const [dragCurve, setDragCurve] = useState<DragCurve>("gaussian");
-  const [smoothAmount, setSmoothAmount] = useState(0.5);
-  const [smoothingRangeMax, setSmoothingRangeMax] = useState(32);
-  const [smoothingSpeed, setSmoothingSpeed] = useState(1);
-  const [smoothingAlgorithm, setSmoothingAlgorithm] = useState<SmoothingAlgorithm>("gaussian");
+  const toolSettings = useToolSettings();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showRefitSettings, setShowRefitSettings] = useState(false);
+  const [activeTab, setActiveTab] = useState<"shapes" | "features">("shapes");
 
   return (
     <div className={styles.pageFrame}>
@@ -124,138 +106,250 @@ export default function TrainPage() {
                 <p className={styles.datasetTitle}>{selectedDataset.label}</p>
                 <p className={styles.datasetSummary}>{selectedDataset.summary}</p>
               </div>
-              <Link className={styles.selectModelButton} href="/">
-                Choose another model
-              </Link>
+              <div className={trainStyles.bannerRight}>
+                <div className={trainStyles.tabBar} role="tablist">
+                  <button
+                    role="tab"
+                    aria-selected={activeTab === "shapes"}
+                    className={`${trainStyles.tabButton} ${activeTab === "shapes" ? trainStyles.tabButtonActive : ""}`}
+                    onClick={() => setActiveTab("shapes")}
+                  >
+                    Shapes
+                  </button>
+                  <button
+                    role="tab"
+                    aria-selected={activeTab === "features"}
+                    className={`${trainStyles.tabButton} ${activeTab === "features" ? trainStyles.tabButtonActive : ""}`}
+                    onClick={() => setActiveTab("features")}
+                  >
+                    Features
+                  </button>
+                </div>
+                <Link className={styles.selectModelButton} href="/">
+                  Choose another model
+                </Link>
+              </div>
             </div>
           ) : null}
-          <section className={styles.panel}>
-            <div className={trainStyles.trainHeader}>
-              <div className={trainStyles.trainTitleBlock}>
-                <p className={styles.panelEyebrow}>Training</p>
-                <h2 className={styles.panelTitle}>Hyperparameters</h2>
+          <div className={styles.topPanels} style={result && activeTab === "shapes" ? { display: "none" } : undefined}>
+          {!result ? (
+            /* ── Initial state: full hyperparameter setup ── */
+            <section className={styles.panel}>
+              <div className={trainStyles.trainHeader}>
+                <div className={trainStyles.trainTitleBlock}>
+                  <p className={styles.panelEyebrow}>Training</p>
+                  <h2 className={styles.panelTitle}>Hyperparameters</h2>
+                </div>
+                <div className={styles.panelActions}>
+                  <button
+                    type="button"
+                    className={trainStyles.trainButton}
+                    onClick={() => train()}
+                    disabled={status === "loading"}
+                  >
+                    {status === "loading" ? "Training…" : "Train model"}
+                  </button>
+                </div>
               </div>
-              <div className={styles.panelActions}>
-                <button
-                  type="button"
-                  className={styles.panelButton}
-                  onClick={() => manualRefitFromEdits()}
-                  disabled={status === "loading" || !result || modelType !== "igann_interactive"}
-                >
-                  {status === "loading" ? "Refitting…" : "Refit from edits"}
-                </button>
-                <button
-                  type="button"
-                  className={trainStyles.trainButton}
-                  onClick={() => manualTrain()}
-                  disabled={status === "loading"}
-                >
-                  {status === "loading" ? "Training…" : "Train model"}
-                </button>
-              </div>
-            </div>
 
-            {/* Primary fields */}
-            <div className={trainStyles.primaryRow}>
-              <div className={trainStyles.field}>
-                <label className={trainStyles.fieldLabel} htmlFor="train-dataset">Dataset</label>
-                <select
-                  id="train-dataset"
-                  className={trainStyles.select}
-                  value={dataset}
-                  onChange={(event) => setDataset(event.target.value)}
-                >
-                  {datasets.map((item) => (
-                    <option key={item.id} value={item.id}>{item.label}</option>
+              <div className={trainStyles.primaryRow}>
+                <div className={trainStyles.field}>
+                  <label className={trainStyles.fieldLabel} htmlFor="train-dataset">Dataset</label>
+                  <select
+                    id="train-dataset"
+                    className={trainStyles.select}
+                    value={dataset}
+                    onChange={(event) => setDataset(event.target.value)}
+                  >
+                    {datasets.map((item) => (
+                      <option key={item.id} value={item.id}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className={trainStyles.field}>
+                  <label className={trainStyles.fieldLabel} htmlFor="train-model">Model</label>
+                  <select
+                    id="train-model"
+                    className={trainStyles.select}
+                    value={modelType}
+                    onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
+                  >
+                    <option value="igann">IGANN</option>
+                    <option value="igann_interactive">IGANN interactive</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className={trainStyles.toggleRow}>
+                <label className={trainStyles.toggleField}>
+                  <input
+                    className={styles.toggleInput}
+                    type="checkbox"
+                    checked={centerShapes}
+                    disabled={modelType !== "igann_interactive"}
+                    onChange={(event) => setCenterShapes(event.target.checked)}
+                  />
+                  <span className={styles.toggleTrack}><span className={styles.toggleThumb} /></span>
+                  <span className={trainStyles.toggleFieldText}>
+                    <span className={trainStyles.toggleFieldLabel}>Center shapes</span>
+                    <span className={trainStyles.toggleFieldHint}>Enforce E[f<sub>j</sub>(X<sub>j</sub>)] = 0</span>
+                  </span>
+                </label>
+              </div>
+
+              <button
+                type="button"
+                className={trainStyles.advancedToggle}
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                <span>{showAdvanced ? "Hide" : "Show"} advanced settings</span>
+                <span className={trainStyles.advancedToggleChevron} style={{ transform: showAdvanced ? "rotate(180deg)" : undefined }}>▾</span>
+              </button>
+
+              {showAdvanced && (
+                <div className={trainStyles.advancedGrid}>
+                  {[
+                    { id: "train-points", label: "Shape points", value: shapePoints, step: 1, min: 2, max: 250, set: setShapePoints },
+                    { id: "train-seed", label: "Seed", value: seed, step: 1, min: 0, max: 9999, set: setSeed },
+                    { id: "train-estimators", label: "Estimators", value: nEstimators, step: 1, min: 10, max: 500, set: setNEstimators },
+                    { id: "train-boostrate", label: "Boost rate", value: boostRate, step: 0.01, min: 0.01, max: 1, set: setBoostRate },
+                    { id: "train-initreg", label: "Init reg", value: initReg, step: 0.01, min: 0.01, max: 10, set: setInitReg },
+                    { id: "train-elmalpha", label: "ELM alpha", value: elmAlpha, step: 0.01, min: 0.01, max: 10, set: setElmAlpha },
+                    { id: "train-earlystop", label: "Early stopping", value: earlyStopping, step: 1, min: 5, max: 200, set: setEarlyStopping },
+                  ].map(({ id, label, value, step, min, max, set }) => (
+                    <div key={id} className={trainStyles.field}>
+                      <label className={trainStyles.fieldLabel} htmlFor={id}>{label}</label>
+                      <input
+                        id={id}
+                        className={trainStyles.numberInput}
+                        type="number"
+                        step={step}
+                        min={min}
+                        max={max}
+                        value={value}
+                        onChange={(e) => set(Number(e.target.value))}
+                      />
+                    </div>
                   ))}
-                </select>
+                </div>
+              )}
+            </section>
+          ) : (
+            /* ── Trained state: feature modes + optional settings ── */
+            <section className={`${styles.panel} ${trainStyles.featurePanel}`}>
+              <div className={trainStyles.trainHeader}>
+                <div className={trainStyles.trainTitleBlock}>
+                  <p className={styles.panelEyebrow}>Interactive</p>
+                  <h2 className={styles.panelTitle}>Feature Modes</h2>
+                </div>
               </div>
-              <div className={trainStyles.field}>
-                <label className={trainStyles.fieldLabel} htmlFor="train-model">Model</label>
-                <select
-                  id="train-model"
-                  className={trainStyles.select}
-                  value={modelType}
-                  onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
-                >
-                  <option value="igann">IGANN</option>
-                  <option value="igann_interactive">IGANN interactive</option>
-                </select>
-              </div>
-            </div>
 
-            {/* Toggle options */}
-            <div className={trainStyles.toggleRow}>
-              <label className={trainStyles.toggleField}>
-                <input
-                  className={styles.toggleInput}
-                  type="checkbox"
-                  checked={centerShapes}
-                  disabled={modelType !== "igann_interactive"}
-                  onChange={(event) => setCenterShapes(event.target.checked)}
+              {result.model.model_type === "igann_interactive" && trainData && (
+                <FeatureModePanel
+                  trainData={trainData}
+                  shapes={currentVersion?.shapes ?? []}
+                  featureModes={featureModes}
+                  onSetFeatureMode={setFeatureMode}
                 />
-                <span className={styles.toggleTrack}><span className={styles.toggleThumb} /></span>
-                <span className={trainStyles.toggleFieldText}>
-                  <span className={trainStyles.toggleFieldLabel}>Center shapes</span>
-                  <span className={trainStyles.toggleFieldHint}>Enforce E[f<sub>j</sub>(X<sub>j</sub>)] = 0</span>
-                </span>
-              </label>
-              <label className={trainStyles.toggleField}>
-                <input
-                  className={styles.toggleInput}
-                  type="checkbox"
-                  checked={scaleY}
-                  onChange={(event) => setScaleY(event.target.checked)}
-                />
-                <span className={styles.toggleTrack}><span className={styles.toggleThumb} /></span>
-                <span className={trainStyles.toggleFieldText}>
-                  <span className={trainStyles.toggleFieldLabel}>Scale target</span>
-                  <span className={trainStyles.toggleFieldHint}>Normalize y for training</span>
-                </span>
-              </label>
-            </div>
+              )}
 
-            {/* Advanced settings toggle */}
-            <button
-              type="button"
-              className={trainStyles.advancedToggle}
-              onClick={() => setShowAdvanced((v) => !v)}
-            >
-              <span>{showAdvanced ? "Hide" : "Show"} advanced settings</span>
-              <span className={trainStyles.advancedToggleChevron} style={{ transform: showAdvanced ? "rotate(180deg)" : undefined }}>▾</span>
-            </button>
+              <button
+                type="button"
+                className={trainStyles.advancedToggle}
+                onClick={() => setShowRefitSettings((v) => !v)}
+              >
+                <span>{showRefitSettings ? "Hide" : "Show"} settings</span>
+                <span className={trainStyles.advancedToggleChevron} style={{ transform: showRefitSettings ? "rotate(180deg)" : undefined }}>▾</span>
+              </button>
 
-            {/* Advanced settings grid */}
-            {showAdvanced && (
-              <div className={trainStyles.advancedGrid}>
-                {[
-                  { id: "train-points", label: "Shape points", value: shapePoints, step: 1, min: 2, max: 250, set: setShapePoints },
-                  { id: "train-seed", label: "Seed", value: seed, step: 1, min: 0, max: 9999, set: setSeed },
-                  { id: "train-estimators", label: "Estimators", value: nEstimators, step: 1, min: 10, max: 500, set: setNEstimators },
-                  { id: "train-boostrate", label: "Boost rate", value: boostRate, step: 0.01, min: 0.01, max: 1, set: setBoostRate },
-                  { id: "train-initreg", label: "Init reg", value: initReg, step: 0.01, min: 0.01, max: 10, set: setInitReg },
-                  { id: "train-elmalpha", label: "ELM alpha", value: elmAlpha, step: 0.01, min: 0.01, max: 10, set: setElmAlpha },
-                  { id: "train-earlystop", label: "Early stopping", value: earlyStopping, step: 1, min: 5, max: 200, set: setEarlyStopping },
-                ].map(({ id, label, value, step, min, max, set }) => (
-                  <div key={id} className={trainStyles.field}>
-                    <label className={trainStyles.fieldLabel} htmlFor={id}>{label}</label>
-                    <input
-                      id={id}
-                      className={trainStyles.numberInput}
-                      type="number"
-                      step={step}
-                      min={min}
-                      max={max}
-                      value={value}
-                      onChange={(e) => set(Number(e.target.value))}
-                    />
+              {showRefitSettings && (
+                <>
+                  <div className={trainStyles.primaryRow}>
+                    <div className={trainStyles.field}>
+                      <label className={trainStyles.fieldLabel} htmlFor="refit-dataset">Dataset</label>
+                      <select
+                        id="refit-dataset"
+                        className={trainStyles.select}
+                        value={dataset}
+                        onChange={(event) => setDataset(event.target.value)}
+                      >
+                        {datasets.map((item) => (
+                          <option key={item.id} value={item.id}>{item.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className={trainStyles.field}>
+                      <label className={trainStyles.fieldLabel} htmlFor="refit-model">Model</label>
+                      <select
+                        id="refit-model"
+                        className={trainStyles.select}
+                        value={modelType}
+                        onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
+                      >
+                        <option value="igann">IGANN</option>
+                        <option value="igann_interactive">IGANN interactive</option>
+                      </select>
+                    </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </section>
-          {result ? (
-            <>
+
+                  <div className={trainStyles.toggleRow}>
+                    <label className={trainStyles.toggleField}>
+                      <input
+                        className={styles.toggleInput}
+                        type="checkbox"
+                        checked={centerShapes}
+                        disabled={modelType !== "igann_interactive"}
+                        onChange={(event) => setCenterShapes(event.target.checked)}
+                      />
+                      <span className={styles.toggleTrack}><span className={styles.toggleThumb} /></span>
+                      <span className={trainStyles.toggleFieldText}>
+                        <span className={trainStyles.toggleFieldLabel}>Center shapes</span>
+                        <span className={trainStyles.toggleFieldHint}>Enforce E[f<sub>j</sub>(X<sub>j</sub>)] = 0</span>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div className={trainStyles.advancedGrid}>
+                    {[
+                      { id: "refit-points", label: "Shape points", value: shapePoints, step: 1, min: 2, max: 250, set: setShapePoints },
+                      { id: "refit-seed", label: "Seed", value: seed, step: 1, min: 0, max: 9999, set: setSeed },
+                      { id: "refit-estimators", label: "Estimators", value: nEstimators, step: 1, min: 10, max: 500, set: setNEstimators },
+                      { id: "refit-boostrate", label: "Boost rate", value: boostRate, step: 0.01, min: 0.01, max: 1, set: setBoostRate },
+                      { id: "refit-initreg", label: "Init reg", value: initReg, step: 0.01, min: 0.01, max: 10, set: setInitReg },
+                      { id: "refit-elmalpha", label: "ELM alpha", value: elmAlpha, step: 0.01, min: 0.01, max: 10, set: setElmAlpha },
+                      { id: "refit-earlystop", label: "Early stopping", value: earlyStopping, step: 1, min: 5, max: 200, set: setEarlyStopping },
+                    ].map(({ id, label, value, step, min, max, set }) => (
+                      <div key={id} className={trainStyles.field}>
+                        <label className={trainStyles.fieldLabel} htmlFor={id}>{label}</label>
+                        <input
+                          id={id}
+                          className={trainStyles.numberInput}
+                          type="number"
+                          step={step}
+                          min={min}
+                          max={max}
+                          value={value}
+                          onChange={(e) => set(Number(e.target.value))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    className={trainStyles.trainButton}
+                    onClick={() => manualRefitFromEdits()}
+                    disabled={status === "loading"}
+                    style={{ marginTop: "0.75rem" }}
+                  >
+                    {status === "loading" ? "Refitting…" : "Refit from edits"}
+                  </button>
+                </>
+              )}
+            </section>
+          )}
+          </div>
+          {result && activeTab === "shapes" ? (
+            <div className={styles.shapePanelSlot}>
               <ShapeFunctionsPanel
                 shapes={result.version.shapes}
                 trainData={result.data}
@@ -278,26 +372,8 @@ export default function TrainPage() {
                 onRedo={redoLast}
                 canRedo={historyCursor < history.length}
                 onSave={handleSave}
-                applyMonotonic={applyMonotonic}
-                addPointsInSelection={addPointsInSelection}
-                activeContinuousTool={activeContinuousTool}
-                setActiveContinuousTool={setActiveContinuousTool}
-                dragFalloffRadius={dragFalloffRadius}
-                setDragFalloffRadius={setDragFalloffRadius}
-                dragRangeBoost={dragRangeBoost}
-                setDragRangeBoost={setDragRangeBoost}
-                dragCurve={dragCurve}
-                setDragCurve={setDragCurve}
-                smoothAmount={smoothAmount}
-                setSmoothAmount={setSmoothAmount}
-                smoothingRangeMax={smoothingRangeMax}
-                setSmoothingRangeMax={setSmoothingRangeMax}
-                smoothingSpeed={smoothingSpeed}
-                setSmoothingSpeed={setSmoothingSpeed}
-                smoothingAlgorithm={smoothingAlgorithm}
-                setSmoothingAlgorithm={setSmoothingAlgorithm}
+                toolSettings={toolSettings}
               />
-              {models ? <PredictionFitPlot result={result} models={models} /> : null}
               {partial ? (
                 <SidebarPanel
                   sidebarTab={sidebarTab}
@@ -313,18 +389,10 @@ export default function TrainPage() {
                   activeKnots={partial ? knots : null}
                   selectedPointIndices={selectedKnots}
                   activeFeatureCategories={partial?.categories ?? null}
-                  onSelectFeature={(featureKey) => {
-                    const nextIdx = currentVersion?.shapes.findIndex((shape) => shape.key === featureKey) ?? -1;
-                    if (nextIdx >= 0) {
-                      setActivePartialIdx(nextIdx);
-                    }
-                  }}
                 />
               ) : null}
-            </>
-          ) : (
-            <div className={styles.placeholder}>Press &quot;Train model&quot; to load shapes.</div>
-          )}
+            </div>
+          ) : null}
         </section>
       </div>
     </div>

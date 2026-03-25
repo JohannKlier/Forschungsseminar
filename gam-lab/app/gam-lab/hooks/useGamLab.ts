@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DatasetOption, KnotSet, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, StatItem, TrainData, TrainResponse } from "../types";
+import { DatasetOption, FeatureMode, HistoryChange, HistoryEntry, KnotSet, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, SidebarTab, StatItem, TrainData, TrainResponse } from "../types";
 import { loadModel, refitModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
 import { type AuditLogFn } from "../lib/audit";
@@ -52,13 +52,6 @@ type InitOptions = {
   auditLogger?: AuditLogFn;
 };
 
-type HistoryChange = { x: number; before?: number; after?: number; delta?: number };
-type HistoryEntry = {
-  featureKey: string;
-  action: string;
-  ts: number;
-  changes: HistoryChange[];
-};
 type FixedLineSnapshot = { id: string; knots: KnotSet };
 
 const noopAuditLog: AuditLogFn = () => {};
@@ -80,7 +73,6 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   // Global training/loading status.
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [debugError, setDebugError] = useState<string | null>(null);
 
   // Core separated state: model metadata, raw data, and accumulated versions.
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
@@ -94,20 +86,26 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [knots, setKnots] = useState<KnotSet>({ x: [], y: [] });
   const [knotEdits, setKnotEdits] = useState<Record<string, KnotSet>>({});
   const [committedEdits, setCommittedEdits] = useState<Record<string, KnotSet>>({});
-  const [previousCommittedEdits, setPreviousCommittedEdits] = useState<Record<string, KnotSet>>({});
   const [selectedKnots, setSelectedKnots] = useState<number[]>([]);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
-  const [historyCursor, setHistoryCursor] = useState(0);
-  const [lockedFeatures, setLockedFeatures] = useState<string[]>([]);
 
   // Derived model predictions and worker wiring.
   const [models, setModels] = useState<Models | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const workerDebounceRef = useRef<number | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyCursor, setHistoryCursor] = useState(0);
+  const [featureModes, setFeatureModes] = useState<Record<string, FeatureMode>>({});
+  // Tracks knots for all features ever seen, including deactivated ones.
+  const persistedEditsRef = useRef<Record<string, KnotSet>>({});
+
+  const lastSelectionContextRef = useRef<{ versionId: string | null; featureKey: string | null }>({
+    versionId: null,
+    featureKey: null,
+  });
 
   // Model/source selector and sidebar tab state.
   const [modelSource, setModelSource] = useState<string>("");
-  const [sidebarTab, setSidebarTab] = useState<"edit" | "history" | "features">("edit");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("edit");
 
   // Convenience: latest version and active shape.
   const currentVersion = useMemo<ShapeFunctionVersion | null>(
@@ -121,11 +119,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     () => (currentVersion ? currentVersion.shapes[activePartialIdx] ?? currentVersion.shapes[0] ?? null : null),
     [currentVersion, activePartialIdx],
   );
-
-  const displayLabel = useMemo(() => {
-    if (!partial || !currentVersion) return "";
-    return partial.label || partial.key || `x${(currentVersion.shapes.indexOf(partial) ?? 0) + 1}`;
-  }, [partial, currentVersion]);
 
   // Apply a new API response: update model info, data, and append the version.
   const applyResponse = (payload: TrainResponse, isRefit: boolean) => {
@@ -189,7 +182,6 @@ export const useGamLab = (options: InitOptions = {}) => {
       detail: requestedParams,
     });
     setStatus("loading");
-    setDebugError(null);
     setModelSource("train");
     try {
       const payload = await trainModel(requestedParams);
@@ -209,7 +201,6 @@ export const useGamLab = (options: InitOptions = {}) => {
       setModelInfo(null);
       setTrainData(null);
       setVersions([]);
-      setDebugError(error instanceof Error ? error.message : "Unknown error");
       logEvent({
         category: "model",
         action: "model.train_failed",
@@ -220,24 +211,6 @@ export const useGamLab = (options: InitOptions = {}) => {
       });
       setStatus("error");
     }
-  };
-
-  const manualTrain = async (
-    overrides?: {
-      dataset?: string;
-      model_type?: "igann" | "igann_interactive";
-      center_shapes?: boolean;
-      points?: number;
-      seed?: number;
-      n_estimators?: number;
-      boost_rate?: number;
-      init_reg?: number;
-      elm_alpha?: number;
-      early_stopping?: number;
-      scale_y?: boolean;
-    },
-  ) => {
-    await train(overrides);
   };
 
   // Initialize from landing-page query parameters.
@@ -254,7 +227,7 @@ export const useGamLab = (options: InitOptions = {}) => {
       setElmAlpha(options.initialTrain.elm_alpha);
       setEarlyStopping(options.initialTrain.early_stopping);
       setScaleY(options.initialTrain.scale_y);
-      manualTrain({
+      train({
         dataset: options.initialTrain.dataset,
         model_type: options.initialTrain.model_type,
         center_shapes: options.initialTrain.center_shapes,
@@ -287,7 +260,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     setModelSource(value);
     if (value === "train") return;
     setStatus("loading");
-    setDebugError(null);
     try {
       const isSaved = value.startsWith("saved:");
       const isBase = value.startsWith("model:");
@@ -314,7 +286,9 @@ export const useGamLab = (options: InitOptions = {}) => {
       if (typeof payload.model.elm_alpha === "number") setElmAlpha(payload.model.elm_alpha);
       if (typeof payload.model.early_stopping === "number") setEarlyStopping(payload.model.early_stopping);
       if (typeof payload.version.center_shapes === "boolean") setCenterShapes(payload.version.center_shapes);
-      setLockedFeatures(Array.isArray(payload.version.locked_features) ? payload.version.locked_features.map(String) : []);
+      if (payload.version.feature_modes && typeof payload.version.feature_modes === "object") {
+        setFeatureModes(payload.version.feature_modes as Record<string, FeatureMode>);
+      }
       logEvent({
         category: "model",
         action: "model.load_succeeded",
@@ -330,7 +304,6 @@ export const useGamLab = (options: InitOptions = {}) => {
       setModelInfo(null);
       setTrainData(null);
       setVersions([]);
-      setDebugError(error instanceof Error ? error.message : "Unknown error");
       logEvent({
         category: "model",
         action: "model.load_failed",
@@ -344,13 +317,23 @@ export const useGamLab = (options: InitOptions = {}) => {
   };
 
   // Build the save payload from the current state.
+  // Includes all known features (even deactivated ones) so the backend can reinstate them.
   const buildSavePayload = (): TrainResponse | null => {
     if (!modelInfo || !trainData || !currentVersion) return null;
-    const edits = committedEdits;
-    const updatedShapes = currentVersion.shapes.map((shape) => {
-      const edit = edits[shape.key];
-      if (!edit) return shape;
-      return { ...shape, editableX: [...edit.x], editableY: [...edit.y] };
+    const allKeys = Object.keys(trainData.featureLabels);
+    const updatedShapes: ShapeFunction[] = allKeys.flatMap((key) => {
+      const versionShape = currentVersion.shapes.find((s) => s.key === key);
+      const edit = committedEdits[key] ?? persistedEditsRef.current[key];
+      if (!edit && !versionShape) return [];
+      const categories = trainData.categories[key];
+      const label = trainData.featureLabels[key] ?? key;
+      return [{
+        key,
+        label,
+        ...(categories ? { categories } : {}),
+        editableX: edit ? [...edit.x] : (versionShape?.editableX ?? []),
+        editableY: edit ? [...edit.y] : (versionShape?.editableY ?? []),
+      }];
     });
     return {
       model: modelInfo,
@@ -403,26 +386,45 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
+  // Toggle lock for a feature — used by ShapeFunctionsPanel's lock button.
   const toggleFeatureLock = (featureKey: string) => {
-    setLockedFeatures((prev) => {
-      const next = prev.includes(featureKey) ? prev.filter((key) => key !== featureKey) : [...prev, featureKey];
+    setFeatureModes((prev) => {
+      const isLocked = prev[featureKey] === "lock";
       logEvent({
         category: "edit",
         action: "feature.lock_toggled",
         featureKey,
-        detail: {
-          locked: next.includes(featureKey),
-          lockedFeatures: next,
-        },
+        detail: { mode: isLocked ? "unlock" : "lock" },
       });
-      return next;
+      if (isLocked) {
+        const next = { ...prev };
+        delete next[featureKey];
+        return next;
+      }
+      return { ...prev, [featureKey]: "lock" };
+    });
+  };
+
+  const setFeatureMode = (featureKey: string, mode: FeatureMode | undefined) => {
+    setFeatureModes((prev) => {
+      logEvent({
+        category: "edit",
+        action: "feature.mode_changed",
+        featureKey,
+        detail: { mode: mode ?? null, previous: prev[featureKey] ?? null },
+      });
+      if (mode === undefined) {
+        const next = { ...prev };
+        delete next[featureKey];
+        return next;
+      }
+      return { ...prev, [featureKey]: mode };
     });
   };
 
   const manualRefitFromEdits = async () => {
     if (!modelInfo || !currentVersion) return;
     if (modelType !== "igann_interactive") {
-      setDebugError("Refit from edited shape functions requires model type IGANN interactive.");
       logEvent({
         category: "model",
         action: "model.refit_blocked",
@@ -442,11 +444,10 @@ export const useGamLab = (options: InitOptions = {}) => {
         dataset,
         modelType,
         versionId: currentVersion.versionId,
-        lockedFeatures,
+        featureModes,
       },
     });
     setStatus("loading");
-    setDebugError(null);
     setModelSource("train");
     try {
       const refitPoints = typeof modelInfo.points === "number" ? modelInfo.points : shapePoints;
@@ -462,21 +463,19 @@ export const useGamLab = (options: InitOptions = {}) => {
         elm_alpha: elmAlpha,
         early_stopping: earlyStopping,
         scale_y: scaleY,
-        partials: payload.version.shapes.map((shape) => ({
+        partials: payload.version.shapes.filter((shape) => !shape.editableZ).map((shape) => ({
           key: shape.key,
           categories: shape.categories,
           editableX: shape.editableX,
           editableY: shape.editableY,
         })),
-        locked_features: lockedFeatures,
+        locked_features: Object.entries(featureModes)
+          .filter(([, m]) => m === "lock")
+          .map(([k]) => k),
+        feature_modes: featureModes,
       });
       // Refit: append new version, keep existing data.
       applyResponse({ ...refitPayload, source: "service" }, true);
-      setLockedFeatures(
-        Array.isArray(refitPayload.version.locked_features)
-          ? refitPayload.version.locked_features.map(String)
-          : lockedFeatures,
-      );
       if (typeof refitPayload.version.center_shapes === "boolean") {
         setCenterShapes(refitPayload.version.center_shapes);
       }
@@ -495,7 +494,6 @@ export const useGamLab = (options: InitOptions = {}) => {
       setStatus("idle");
     } catch (error) {
       console.warn("Refit failed.", error);
-      setDebugError(error instanceof Error ? error.message : "Unknown error");
       logEvent({
         category: "model",
         action: "model.refit_failed",
@@ -515,28 +513,19 @@ export const useGamLab = (options: InitOptions = {}) => {
     if (!currentVersion) return;
     const next: Record<string, KnotSet> = {};
     currentVersion.shapes.forEach((shape) => {
+      if (shape.editableZ) return; // 2-D interaction shapes have no editable 1-D knots
       next[shape.key] = buildEditableKnots(shape);
     });
-    setBaselineKnots((prev) => {
-      // Keep original baseline across refit iterations so "Before" always
-      // refers to the initial model, not only the previous refit step.
-      if (!currentVersion.refit_from_edits) return next;
-      const merged: Record<string, KnotSet> = {};
-      Object.keys(next).forEach((key) => {
-        const existing = prev[key];
-        merged[key] =
-          existing && existing.x?.length && existing.y?.length ? existing : next[key];
-      });
-      return merged;
+    setBaselineKnots(next);
+    // Persist knots for all features so deactivated ones can be recovered.
+    currentVersion.shapes.forEach((shape) => {
+      if (shape.editableZ) return;
+      persistedEditsRef.current[shape.key] = buildEditableKnots(shape);
     });
     setKnotEdits(next);
     setCommittedEdits(next);
-    setPreviousCommittedEdits(next);
     setHistory([]);
     setHistoryCursor(0);
-    setLockedFeatures((prev) =>
-      prev.filter((featureKey) => currentVersion.shapes.some((s) => s.key === featureKey)),
-    );
     logEvent({
       category: "model",
       action: "model.version_loaded",
@@ -563,8 +552,44 @@ export const useGamLab = (options: InitOptions = {}) => {
     } else {
       setKnots(buildEditableKnots(active));
     }
-    setSelectedKnots([]);
+    const last = lastSelectionContextRef.current;
+    const nextContext = {
+      versionId: currentVersion.versionId,
+      featureKey: active.key,
+    };
+    if (last.versionId !== nextContext.versionId || last.featureKey !== nextContext.featureKey) {
+      setSelectedKnots([]);
+    }
+    lastSelectionContextRef.current = nextContext;
   }, [currentVersion, activePartialIdx, baselineKnots, knotEdits]);
+
+  // Background worker keeps stats responsive during edits.
+  useEffect(() => {
+    if (!currentVersion || !trainData) {
+      if (workerDebounceRef.current != null) {
+        window.clearTimeout(workerDebounceRef.current);
+        workerDebounceRef.current = null;
+      }
+      setModels(null);
+      return;
+    }
+    if (typeof window === "undefined") return;
+    if (!workerRef.current) {
+      workerRef.current = new Worker(new URL("../workers/modelWorker.ts", import.meta.url));
+      workerRef.current.onmessage = (e) => { setModels(e.data); };
+    }
+    if (workerDebounceRef.current != null) window.clearTimeout(workerDebounceRef.current);
+    workerDebounceRef.current = window.setTimeout(() => {
+      workerRef.current?.postMessage({ version: currentVersion, trainData, modelInfo, baselineKnots, knotEdits: committedEdits });
+      workerDebounceRef.current = null;
+    }, 40);
+    return () => {
+      if (workerDebounceRef.current != null) {
+        window.clearTimeout(workerDebounceRef.current);
+        workerDebounceRef.current = null;
+      }
+    };
+  }, [currentVersion, trainData, modelInfo, baselineKnots, committedEdits]);
 
   const buildChanges = (before: KnotSet, after: KnotSet) => {
     const beforeMap = new Map<number, number>();
@@ -654,19 +679,8 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   // Save a committed version used by the worker to recompute predictions.
   const commitEdits = (featureKey: string, next: KnotSet) => {
-    setCommittedEdits((prev) => {
-      const previous = prev[featureKey] ?? baselineKnots[featureKey] ?? next;
-      setPreviousCommittedEdits((prevPrevious) => ({
-        ...prevPrevious,
-        [featureKey]: cloneKnots(previous),
-      }));
-      return { ...prev, [featureKey]: cloneKnots(next) };
-    });
+    setCommittedEdits((prev) => ({ ...prev, [featureKey]: cloneKnots(next) }));
   };
-
-  // Keep the interaction callbacks stable; worker results now apply live during drags.
-  const notifyInteractionStart = () => {};
-  const notifyInteractionEnd = () => {};
 
   const rebuildEditsFromHistory = (entries: typeof history) => {
     const nextEdits: Record<string, KnotSet> = {};
@@ -683,7 +697,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     setHistoryCursor(clamped);
     setKnotEdits(rebuilt);
     setCommittedEdits(rebuilt);
-    setPreviousCommittedEdits(rebuilt);
     if (currentVersion) {
       const active = currentVersion.shapes[activePartialIdx];
       const fallback = baselineKnots[active?.key ?? ""] ?? { x: [], y: [] };
@@ -694,14 +707,7 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   const updateFeatureEdits = (featureKey: string, next: KnotSet) => {
     setKnotEdits((prev) => ({ ...prev, [featureKey]: next }));
-    setCommittedEdits((prev) => {
-      const previous = prev[featureKey] ?? baselineKnots[featureKey] ?? next;
-      setPreviousCommittedEdits((prevPrevious) => ({
-        ...prevPrevious,
-        [featureKey]: cloneKnots(previous),
-      }));
-      return { ...prev, [featureKey]: cloneKnots(next) };
-    });
+    setCommittedEdits((prev) => ({ ...prev, [featureKey]: cloneKnots(next) }));
     if (currentVersion) {
       const active = currentVersion.shapes[activePartialIdx];
       if (active?.key === featureKey) {
@@ -786,137 +792,79 @@ export const useGamLab = (options: InitOptions = {}) => {
     applyHistoryCursor(nextCursor, nextHistory);
   };
 
-  // Background worker keeps prediction plots responsive during edits.
-  // Passes trainData and currentVersion separately so the worker can use
-  // trainX for scatter/contributions and intercept from the version.
-  useEffect(() => {
-    if (!currentVersion || !trainData) {
-      if (workerDebounceRef.current != null) {
-        window.clearTimeout(workerDebounceRef.current);
-        workerDebounceRef.current = null;
-      }
-      setModels(null);
-      return;
-    }
-    if (typeof window === "undefined") return;
-    if (!workerRef.current) {
-      workerRef.current = new Worker(new URL("../workers/modelWorker.ts", import.meta.url));
-      workerRef.current.onmessage = (e) => {
-        setModels(e.data);
-      };
-    }
-    if (workerDebounceRef.current != null) {
-      window.clearTimeout(workerDebounceRef.current);
-    }
-    workerDebounceRef.current = window.setTimeout(() => {
-      workerRef.current?.postMessage({
-        version: currentVersion,
-        trainData,
-        modelInfo,
-        baselineKnots,
-        knotEdits: committedEdits,
-      });
-      workerDebounceRef.current = null;
-    }, 40);
-    return () => {
-      if (workerDebounceRef.current != null) {
-        window.clearTimeout(workerDebounceRef.current);
-        workerDebounceRef.current = null;
-      }
-    };
-  }, [currentVersion, trainData, modelInfo, baselineKnots, committedEdits]);
-
-  // Compute dashboard metrics showing 3 bars: initial / latest / current.
+  // Compute dashboard metrics: initial / last / latest / current(live).
   // initial  = server-computed metrics from the very first training run (versions[0])
+  // last     = server-computed metrics from the version just before current
   // latest   = server-computed metrics from the most recent train/refit (currentVersion)
   // current  = live frontend metrics recalculated from edited knots via worker
   const stats = useMemo<StatItem[] | null>(() => {
-    if (!modelInfo || !trainData || !models || !currentVersion) return null;
+    if (!modelInfo || !currentVersion) return null;
     const items: StatItem[] = [];
 
-    const buildPairs = (yTrue: number[], yPred: number[]) =>
-      yTrue
-        .map((y, i) => ({ y, p: yPred[i] }))
-        .filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p)) as { y: number; p: number }[];
+    const isClassification = modelInfo.task === "classification";
 
     const calcRegression = (yTrue: number[], yPred: number[]) => {
-      const pairs = buildPairs(yTrue, yPred);
+      const pairs = yTrue.map((y, i) => ({ y, p: yPred[i] })).filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p));
       if (!pairs.length) return null;
-      const diffs = pairs.map((pair) => pair.y - pair.p);
-      const mse = diffs.reduce((s, d) => s + d * d, 0) / pairs.length;
-      const mae = diffs.reduce((s, d) => s + Math.abs(d), 0) / pairs.length;
-      const rmse = Math.sqrt(mse);
-      const mean = pairs.reduce((s, pair) => s + pair.y, 0) / pairs.length;
-      const denom = pairs.reduce((s, pair) => s + (pair.y - mean) * (pair.y - mean), 0);
-      const r2 = denom > 0 ? 1 - diffs.reduce((s, d) => s + d * d, 0) / denom : 0;
-      return { rmse, r2, mae, count: pairs.length };
-    };
-    const calcClassification = (yTrue: number[], yPred: number[]) => {
-      const pairs = buildPairs(yTrue, yPred);
-      if (!pairs.length) return null;
-      const yBin = pairs.map((pair) => (pair.y >= 0.5 ? 1 : 0));
-      const pBin = pairs.map((pair) => (pair.p >= 0.5 ? 1 : 0));
-      const correct = yBin.reduce((s: number, v, i) => s + (v === pBin[i] ? 1 : 0), 0);
-      const acc = correct / yBin.length;
-      let tp = 0; let fp = 0; let fn = 0;
-      yBin.forEach((v, i) => {
-        const p = pBin[i];
-        if (v === 1 && p === 1) tp += 1;
-        if (v === 0 && p === 1) fp += 1;
-        if (v === 1 && p === 0) fn += 1;
-      });
-      const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-      const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
-      const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
-      return { acc, precision, recall, f1, count: yBin.length };
+      const n = pairs.length;
+      const mse = pairs.reduce((s, { y, p }) => s + (y - p) ** 2, 0) / n;
+      const mae = pairs.reduce((s, { y, p }) => s + Math.abs(y - p), 0) / n;
+      const yMean = pairs.reduce((s, { y }) => s + y, 0) / n;
+      const ssTot = pairs.reduce((s, { y }) => s + (y - yMean) ** 2, 0);
+      const r2 = ssTot > 0 ? 1 - (mse * n) / ssTot : 0;
+      return { rmse: Math.sqrt(mse), mae, r2, count: n };
     };
 
-    const isClassification = modelInfo.task === "classification";
+    const calcClassification = (yTrue: number[], yPred: number[]) => {
+      const pairs = yTrue.map((y, i) => ({ y, p: yPred[i] })).filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p));
+      if (!pairs.length) return null;
+      const yBin = pairs.map(({ y }) => (y > 0.5 ? 1 : 0));
+      const pBin = pairs.map(({ p }) => (p > 0.5 ? 1 : 0));
+      const tp = yBin.reduce((s, y, i) => s + (y === 1 && pBin[i] === 1 ? 1 : 0), 0 as number);
+      const fp = yBin.reduce((s, y, i) => s + (y === 0 && pBin[i] === 1 ? 1 : 0), 0 as number);
+      const fn = yBin.reduce((s, y, i) => s + (y === 1 && pBin[i] === 0 ? 1 : 0), 0 as number);
+      const acc = yBin.filter((y, i) => y === pBin[i]).length / yBin.length;
+      const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+      const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+      return { acc, precision, recall, count: yBin.length };
+    };
+
     const makeBarItem = (
       label: string,
       initial: number | null,
+      last: number | null,
       latest: number | null,
       current: number | null,
       lowerIsBetter = false,
       format = "0.000",
-    ): StatItem => ({ label, kind: "bar", initial, latest, current, lowerIsBetter, format });
+    ): StatItem => ({ label, kind: "bar", initial, last, latest, current, lowerIsBetter, format });
     const makeValueItem = (label: string, value: string): StatItem => ({ label, kind: "value", value });
 
-    // Server metrics from first and latest versions.
     const initialVersion = versions[0];
+    const prevVersion = versions.length > 1 ? versions[versions.length - 2] : versions[0];
     const initTrain = initialVersion?.trainMetrics;
+    const prevTrain = prevVersion?.trainMetrics ?? null;
     const latestTrain = currentVersion.trainMetrics;
 
-    // Live frontend metrics from worker (edited knots applied).
-    const liveMetric = isClassification
-      ? calcClassification(trainData.trainY, models.editedModel.preds)
-      : calcRegression(trainData.trainY, models.editedModel.preds);
+    const trainY = trainData?.trainY ?? [];
+    const liveMetric = models
+      ? isClassification
+        ? calcClassification(trainY, models.editedModel.preds)
+        : calcRegression(trainY, models.editedModel.preds)
+      : null;
 
-    const n = liveMetric?.count ?? initTrain?.count ?? latestTrain?.count ?? 0;
+    const n = initTrain?.count ?? latestTrain?.count ?? 0;
 
     if (isClassification) {
-      const initAcc = initTrain?.acc ?? null;
-      const latestAcc = latestTrain?.acc ?? null;
       const curAcc = liveMetric && "acc" in liveMetric ? liveMetric.acc : null;
-      items.push(makeBarItem("Accuracy", initAcc, latestAcc, curAcc));
-      if (liveMetric && "f1" in liveMetric) {
-        items.push(makeBarItem("F1", null, null, liveMetric.f1));
-        items.push(makeBarItem("Precision", null, null, liveMetric.precision));
-        items.push(makeBarItem("Recall", null, null, liveMetric.recall));
-      }
+      items.push(makeBarItem("Accuracy", initTrain?.acc ?? null, prevTrain?.acc ?? null, latestTrain?.acc ?? null, curAcc));
     } else {
-      const initRmse = initTrain?.rmse ?? null;
-      const latestRmse = latestTrain?.rmse ?? null;
       const curRmse = liveMetric && "rmse" in liveMetric ? liveMetric.rmse : null;
-      const initMae = initTrain?.mae ?? null;
-      const latestMae = latestTrain?.mae ?? null;
-      const initR2 = initTrain?.r2 ?? null;
-      const latestR2 = latestTrain?.r2 ?? null;
-      const curR2 = liveMetric && "r2" in liveMetric ? liveMetric.r2 : null;
       const curMae = liveMetric && "mae" in liveMetric ? liveMetric.mae : null;
-      items.push(makeBarItem("RMSE", initRmse, latestRmse, curRmse, true));
-      items.push(makeBarItem("MAE", initMae, latestMae, curMae, true));
-      items.push(makeBarItem("R²", initR2, latestR2, curR2));
+      const curR2 = liveMetric && "r2" in liveMetric ? liveMetric.r2 : null;
+      items.push(makeBarItem("RMSE", initTrain?.rmse ?? null, prevTrain?.rmse ?? null, latestTrain?.rmse ?? null, curRmse, true));
+      items.push(makeBarItem("MAE", initTrain?.mae ?? null, prevTrain?.mae ?? null, latestTrain?.mae ?? null, curMae, true));
+      items.push(makeBarItem("R²", initTrain?.r2 ?? null, prevTrain?.r2 ?? null, latestTrain?.r2 ?? null, curR2));
     }
     items.push(makeValueItem("n", n.toString()));
 
@@ -945,6 +893,11 @@ export const useGamLab = (options: InitOptions = {}) => {
     return snapshots;
   }, [history, historyCursor, baselineKnots]);
 
+  // Derived locked list for backward compat with ShapeFunctionsPanel.
+  const lockedFeatures = Object.entries(featureModes)
+    .filter(([, m]) => m === "lock")
+    .map(([k]) => k);
+
   return {
     datasets: DATASETS,
     dataset,
@@ -971,11 +924,8 @@ export const useGamLab = (options: InitOptions = {}) => {
     setScaleY,
     status,
     result,
-    modelInfo,
     trainData,
-    versions,
     currentVersion,
-    debugError,
     activePartialIdx,
     setActivePartialIdx,
     baselineKnots,
@@ -983,12 +933,12 @@ export const useGamLab = (options: InitOptions = {}) => {
     setKnots,
     knotEdits,
     setKnotEdits,
-    committedEdits,
-    previousCommittedEdits,
     fixedLinesByFeature,
     selectedKnots,
     setSelectedKnots,
     lockedFeatures,
+    featureModes,
+    setFeatureMode,
     history,
     historyCursor,
     recordAction,
@@ -997,12 +947,8 @@ export const useGamLab = (options: InitOptions = {}) => {
     redoLast,
     deleteHistoryEntry,
     stats,
-    models,
-    notifyInteractionStart,
-    notifyInteractionEnd,
     modelSource,
-    handleModelSelect,
-    manualTrain,
+    train,
     manualRefitFromEdits,
     toggleFeatureLock,
     handleSave,
@@ -1010,8 +956,5 @@ export const useGamLab = (options: InitOptions = {}) => {
     setSidebarTab,
     selectedDataset,
     partial,
-    displayLabel,
   };
 };
-
-export type GamLabState = ReturnType<typeof useGamLab>;

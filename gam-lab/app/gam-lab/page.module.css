@@ -43,7 +43,7 @@
   flex-direction: column;
   gap: 0.5rem;
   height: 100%;
-  overflow: hidden;
+  overflow-y: auto;
 }
 
 .header {
@@ -381,11 +381,18 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  flex: 1 1 0;
+  flex: 1 1 auto;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
+}
+
+.topPanels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .datasetBanner {
@@ -470,8 +477,8 @@
 }
 
 .shapePanelSlot {
-  flex: 1 1 0;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 70vh;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1615,6 +1622,38 @@
   gap: 0;
 }
 
+.featureDistributionLegend {
+  display: flex;
+  gap: 0.55rem;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.featureDistributionLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 0.22rem;
+  font-size: 0.62rem;
+  color: rgba(82, 98, 122, 0.9);
+  font-weight: 600;
+}
+
+.featureDistributionLegendSwatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 0;
+  flex-shrink: 0;
+}
+
+.featureDistributionLegendSwatchAll {
+  background: rgba(149, 184, 220, 0.62);
+}
+
+.featureDistributionLegendSwatchSelected {
+  background: rgba(244, 191, 117, 0.72);
+}
+
 .featureDistributionCard {
   display: flex;
   flex-direction: column;
@@ -1626,19 +1665,6 @@
   border-radius: 0;
   background: transparent;
   text-align: left;
-  cursor: pointer;
-  transition: border-color 120ms ease, opacity 120ms ease;
-}
-
-.featureDistributionCard:hover {
-  border-bottom-color: rgba(197, 63, 47, 0.32);
-  background: transparent;
-}
-
-.featureDistributionCardActive {
-  border-bottom-color: rgba(20, 33, 61, 0.1);
-  box-shadow: none;
-  background: transparent;
 }
 
 .featureDistributionHeader {
@@ -1656,16 +1682,18 @@
 
 .featureDistributionHistogram {
   height: 48px;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  align-items: end;
-  gap: 1px;
+  display: block;
   padding: 0.05rem 0 0;
   border-radius: 0;
   background: none;
   border: none;
   border-bottom: 1px solid rgba(20, 33, 61, 0.12);
+}
+
+.featureDistributionHistogramSvg {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .featureDistributionBin {
@@ -1913,10 +1941,14 @@
   gap: 0.4rem;
 }
 
+.actionsGroupMuted {
+  opacity: 0.28;
+}
+
 .selectionActionsGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.3rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
 }
 
 .selectionActionButton {
@@ -1924,10 +1956,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 0.18rem;
-  padding: 0.4rem 0.2rem 0.3rem;
+  gap: 0.12rem;
+  min-height: 3.35rem;
+  padding: 0.34rem 0.18rem 0.28rem;
   border: 1px solid #94a3b8;
-  border-radius: 0.55rem;
+  border-radius: 0.65rem;
   background: #ffffff;
   color: #334155;
   cursor: pointer;
@@ -1951,13 +1984,13 @@
 }
 
 .selectionActionIcon {
-  width: 22px;
-  height: 22px;
+  width: 19px;
+  height: 19px;
   object-fit: contain;
 }
 
 .selectionActionLabel {
-  font-size: 0.58rem;
+  font-size: 0.55rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -1969,6 +2002,8 @@
   grid-column: 1 / -1;
   cursor: default;
   position: relative;
+  min-height: auto;
+  padding: 0.38rem 0.32rem 0.32rem;
 }
 
 .selectionActionButtonWide:hover {
@@ -1979,15 +2014,16 @@
 .selectionActionMenuTrigger {
   width: 100%;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  gap: 0.18rem;
+  justify-content: flex-start;
+  gap: 0.32rem;
   padding: 0;
   border: none;
   background: transparent;
   color: inherit;
   cursor: pointer;
+  text-align: left;
 }
 
 .selectionActionMenuTrigger:disabled {
@@ -1995,7 +2031,8 @@
 }
 
 .selectionActionHint {
-  font-size: 0.58rem;
+  margin-left: auto;
+  font-size: 0.54rem;
   font-weight: 600;
   color: #64748b;
 }
@@ -2005,7 +2042,7 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.25rem;
   width: 100%;
-  margin-top: 0.2rem;
+  margin-top: 0.35rem;
 }
 
 .selectionActionChoice {
@@ -2296,24 +2333,37 @@
 }
 
 .actionChip {
-  flex: 1 1 auto;
+  flex: 1 1 0;
   min-width: 0;
-  padding: 0.22rem 0.5rem;
+  height: 1.9rem;
+  padding: 0;
   border: 1px solid #cbd5e1;
-  border-radius: 2rem;
+  border-radius: 0.3rem;
   background: #fff;
   color: #475569;
   font-size: 0.7rem;
   font-weight: 600;
   cursor: pointer;
-  white-space: nowrap;
   transition: background 0.1s, color 0.1s, border-color 0.1s;
-  text-align: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .actionChip:hover {
   border-color: #0ea5e9;
   color: #0ea5e9;
+}
+
+.actionChipIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .actionChipActive {
@@ -2456,9 +2506,9 @@
   position: relative;
   height: 18px;
   border-radius: 0;
-  background: #e2e8f0;
+  background: #ffffff;
   overflow: hidden;
-  border: 1px solid #cbd5e1;
+  border: 1px solid #e2e8f0;
 }
 
 .statsBarTrack {
@@ -2480,10 +2530,16 @@
   min-width: fit-content;
 }
 
-/* initial = first training run — muted neutral */
+/* initial = first training run — slate grey */
 .statsBarValueInitial {
-  background: rgba(148, 163, 184, 0.55);
-  color: #1e293b;
+  background: #94a3b8;
+  color: #ffffff;
+}
+
+/* last = version just before latest — muted teal */
+.statsBarValueLast {
+  background: #64748b;
+  color: #ffffff;
 }
 
 /* latest = most recent train/refit — accent amber */
@@ -2534,7 +2590,11 @@
 }
 
 .statsLegendSwatchInitial {
-  background: rgba(148, 163, 184, 0.55);
+  background: #94a3b8;
+}
+
+.statsLegendSwatchLast {
+  background: #64748b;
 }
 
 .statsLegendSwatchLatest {
@@ -2644,3 +2704,301 @@
     height: 240px;
   }
 }
+
+/* ── Feature mode panel (main area) ──────────────────────────────────────── */
+
+.featureModePanel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.featureModeRows {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.featureModeRow {
+  display: grid;
+  grid-template-columns: 10rem 3.5rem 1fr 200px;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  border-radius: 0.35rem;
+  transition: opacity 0.15s ease;
+}
+
+.featureModeRowDeactivated {
+  opacity: 0.4;
+}
+
+.featureModeHist {
+  min-width: 0;
+}
+
+.featureModeRowLabel {
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.importanceCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.3rem;
+  padding: 0.18rem 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+  transition: background 0.3s ease;
+}
+
+.featureModeButtons {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.featureModeBtn {
+  flex: 1 1 0;
+  padding: 0.25rem 0.2rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  border-radius: 0.3rem;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 255, 255, 0.5);
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+  white-space: nowrap;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.featureModeBtn:hover {
+  background: rgba(20, 33, 61, 0.07);
+  color: var(--ink);
+}
+
+.featureModeBtnActive {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+
+.featureModeBtnActiveContinue {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+.featureModeBtnActiveLock {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.featureModeBtnActiveReinit {
+  background: #0f766e;
+  border-color: #0f766e;
+}
+
+.featureModeBtnActiveDeactivate {
+  background: #9f1239;
+  border-color: #9f1239;
+}
+
+/* ── Feature mode toggle switches ─────────────────────────────────────────── */
+
+.featureModeControls {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+}
+
+.featureModeLockLabel,
+.featureModeDeactivateLabel {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  user-select: none;
+  font-size: 0.71rem;
+  font-weight: 600;
+  color: rgba(20, 33, 61, 0.5);
+  transition: color 0.15s ease;
+}
+
+.featureModeLockLabel:has(:not(:disabled)):hover,
+.featureModeDeactivateLabel:hover {
+  color: var(--ink);
+}
+
+.featureModeLockLabel:has(:checked) {
+  color: #1d4ed8;
+}
+
+.featureModeDeactivateLabel:has(:checked) {
+  color: #be123c;
+}
+
+.featureModeLockInput,
+.featureModeDeactivateInput {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Shared track base */
+.featureModeLockTrack,
+.featureModeDeactivateTrack {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  background: rgba(20, 33, 61, 0.15);
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+}
+
+.featureModeLockThumb,
+.featureModeDeactivateThumb {
+  position: absolute;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: left 0.18s ease;
+}
+
+/* Lock: blue when on */
+.featureModeLockInput:checked + .featureModeLockTrack {
+  background: #1d4ed8;
+}
+.featureModeLockInput:checked + .featureModeLockTrack .featureModeLockThumb {
+  left: calc(100% - 14px);
+}
+
+/* Deactivate: rose-red when on */
+.featureModeDeactivateInput:checked + .featureModeDeactivateTrack {
+  background: #be123c;
+}
+.featureModeDeactivateInput:checked + .featureModeDeactivateTrack .featureModeDeactivateThumb {
+  left: calc(100% - 14px);
+}
+
+/* Disabled state (lock when feature is deactivated) */
+.featureModeLockInput:disabled + .featureModeLockTrack {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.featureModeLockLabel:has(:disabled) {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* ── Interaction pairs selector ──────────────────────────────────── */
+.interactionPairsSection {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.interactionPairList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.interactionPairItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: rgba(20, 33, 61, 0.06);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+
+.interactionPairSep {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.interactionPairRemove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.75rem;
+  padding: 0 0.15rem;
+  line-height: 1;
+}
+.interactionPairRemove:hover {
+  color: var(--accent);
+}
+
+.interactionPairAdder {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.interactionPairAdder select {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* ── Interaction heatmap display section ─────────────────────────── */
+.interactionsSection {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.interactionsSectionTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 1rem;
+}
+
+.interactionsGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.interactionCard {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.5rem;
+  box-shadow: 0 1px 4px rgba(20,33,61,0.06);
+  display: inline-flex;
+}
+
+.interactionPanelBody {
+  padding: 0 1.5rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+

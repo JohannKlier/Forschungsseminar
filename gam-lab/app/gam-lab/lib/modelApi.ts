@@ -126,6 +126,7 @@ export type RefitRequest = TrainRequest & {
     editableY?: number[];
   }>;
   locked_features?: string[];
+  feature_modes?: Record<string, string>;
 };
 
 export const trainModel = async (request: TrainRequest): Promise<TrainResponse> => {

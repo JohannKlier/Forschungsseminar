@@ -17,4 +17,3 @@ export const interpolateFeature = (xTargets: number[], knots: { x: number[]; y: 
   });
 };
 
-export type KnotSet = { x: number[]; y: number[] };

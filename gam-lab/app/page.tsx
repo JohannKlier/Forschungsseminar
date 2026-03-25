@@ -78,6 +78,9 @@ export default function Home() {
             >
               Get started
             </button>
+            <Link className={styles.secondary} href="/gam-lab/train">
+              Full training interface
+            </Link>
             <Link className={styles.secondary} href="/logs">
               Inspect user logs
             </Link>

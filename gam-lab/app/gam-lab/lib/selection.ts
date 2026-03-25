@@ -1,3 +1,5 @@
+import type { KnotSet } from "../types";
+
 export type SelectionMode = "contiguous" | "free";
 
 const uniq = (indices: number[]) => Array.from(new Set(indices));
@@ -50,4 +52,17 @@ type BrushSelectionArgs = {
 export const applyBrushSelection = ({ current, selected, multi, mode }: BrushSelectionArgs) => {
   const merged = multi ? uniq([...current, ...selected]) : selected;
   return normalize(merged, mode);
+};
+
+export const preserveSelectionForNextKnots = (previous: KnotSet, next: KnotSet, selection: number[]) => {
+  const validSelection = selection.filter((idx) => idx >= 0 && idx < previous.x.length);
+  if (!validSelection.length) return [];
+  const selectedXs = validSelection.map((idx) => previous.x[idx]).filter((x) => Number.isFinite(x));
+  if (!selectedXs.length) return validSelection.filter((idx) => idx < next.x.length);
+  const minX = Math.min(...selectedXs);
+  const maxX = Math.max(...selectedXs);
+  return next.x
+    .map((x, idx) => ({ x, idx }))
+    .filter(({ x }) => x >= minX && x <= maxX)
+    .map(({ idx }) => idx);
 };

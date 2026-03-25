@@ -50,7 +50,6 @@ type KnotDatum = { x: number; y: number; idx: number };
 
 const PADDING = { top: 16, right: 16, bottom: 72, left: 64 };
 const HEIGHT = 560;
-const SHOW_KNOT_MARKERS = false;
 const HIT_SIZE = 20;
 
 const cloneKnots = (value: { x: number[]; y: number[] }) => ({ x: [...value.x], y: [...value.y] });
@@ -273,14 +272,14 @@ export default function VisxShapeEditor({
     if (content.empty()) return;
     svg
       .selectAll<SVGCircleElement, any>("circle.knot")
-      .attr("fill", (d: any) => (SHOW_KNOT_MARKERS ? (selectedSet.has(d.idx) ? "#0b6fa6" : "#0ea5e9") : "transparent"))
-      .attr("stroke", SHOW_KNOT_MARKERS ? "#0b172a" : "none")
-      .attr("stroke-width", (d: any) => (SHOW_KNOT_MARKERS ? (selectedSet.has(d.idx) ? 1.5 : 1) : 0))
-      .attr("r", (d: any) => (SHOW_KNOT_MARKERS ? (selectedSet.has(d.idx) ? 6 : 5) : 0));
+      .attr("fill", "transparent")
+      .attr("stroke", "none")
+      .attr("stroke-width", 0)
+      .attr("r", 0);
     if (!isDraggingRef.current && !(interactionMode !== "zoom" && smoothingMode && smoothHoverIdxRef.current != null)) {
       svg
         .selectAll<SVGCircleElement, any>("circle.knot")
-        .attr("fill", (d: any) => (SHOW_KNOT_MARKERS ? (selectedSet.has(d.idx) ? "#0b6fa6" : "#0ea5e9") : "transparent"));
+        .attr("fill", "transparent");
     }
     const selectedNodes = svg
       .selectAll<SVGCircleElement, any>("circle.knot")
@@ -785,27 +784,8 @@ export default function VisxShapeEditor({
       shapePath.attr("stroke", `url(#${gradientId})`).attr("stroke-width", 3.6);
     };
     const updateKnotFill = (selection?: Selection<SVGCircleElement, any, SVGGElement, unknown>) => {
-      const selectedSet = new Set(selectedRef.current);
       const sel = selection ?? content.selectAll<SVGCircleElement, any>("circle.knot");
-      if (!SHOW_KNOT_MARKERS) {
-        sel.attr("fill", "transparent").attr("stroke", "none").attr("stroke-width", 0).attr("r", 0);
-        updatePathHighlight();
-        return;
-      }
-      sel.attr("fill", (d: any) => {
-        const idx = d.idx as number;
-        if (isDraggingRef.current) {
-          const raw = dragWeightsRef.current[idx];
-          const weight = Number.isFinite(raw) ? (raw as number) : 0;
-          return blendColor(weight);
-        }
-        if (interactionMode !== "zoom" && smoothingMode && smoothHoverIdxRef.current != null) {
-          const raw = smoothWeightsRef.current[idx];
-          const weight = Number.isFinite(raw) ? (raw as number) : 0;
-          if (weight > 0) return blendColor(weight);
-        }
-        return selectedSet.has(idx) ? "#0c4a6e" : "#0ea5e9";
-      });
+      sel.attr("fill", "transparent").attr("stroke", "none").attr("stroke-width", 0).attr("r", 0);
       updatePathHighlight();
     };
     const applyDragPreview = (next: { x: number[]; y: number[] }) => {
@@ -862,18 +842,18 @@ export default function VisxShapeEditor({
         setFixedSnapshots((prev) => (prev.length >= 2 ? prev.slice(1) : prev));
         const liveKnots = knotsRef.current ?? knots;
         const multi = event.sourceEvent.shiftKey || event.sourceEvent.metaKey || event.sourceEvent.ctrlKey;
-        const nextSelection = d && d.idx != null
+        const nextSelection = d && d.idx != null && multi
           ? resolveDragSelection({
               current: selectedRef.current,
               idx: d.idx,
-              multi,
+              multi: true,
               mode: "contiguous",
             }).next
           : selectedRef.current;
-        pendingSelectionRef.current = nextSelection;
+        pendingSelectionRef.current = multi ? nextSelection : null;
         applySelectionPreview();
         if (d && d.idx != null) {
-          dragTargetsRef.current = nextSelection.length ? nextSelection : [d.idx];
+          dragTargetsRef.current = nextSelection.includes(d.idx) ? nextSelection : [d.idx];
         } else {
           dragTargetsRef.current = nextSelection;
         }
@@ -1001,15 +981,15 @@ export default function VisxShapeEditor({
       .on("end", () => {
         dragTargetsRef.current = [];
         isDraggingRef.current = false;
+        if (pendingSelectionRef.current) {
+          onSelectionChangeRef.current(pendingSelectionRef.current);
+          pendingSelectionRef.current = null;
+        }
         dragStartMapRef.current = [];
         dragStartYRef.current = null;
         dragStartXRef.current = null;
         dragWeightsRef.current.fill(0);
         dragWeightsMaxRef.current = 0;
-        if (pendingSelectionRef.current) {
-          onSelectionChangeRef.current(pendingSelectionRef.current);
-          pendingSelectionRef.current = null;
-        }
         if (rafIdRef.current != null) {
           window.cancelAnimationFrame(rafIdRef.current);
           rafIdRef.current = null;
@@ -1188,8 +1168,8 @@ export default function VisxShapeEditor({
             .append("circle")
             .classed("knot", true)
             .classed("drag-handle", true)
-            .attr("r", SHOW_KNOT_MARKERS ? 5 : 0)
-            .attr("fill", SHOW_KNOT_MARKERS ? "#0ea5e9" : "transparent")
+            .attr("r", 0)
+            .attr("fill", "transparent")
             .style("cursor", interactionMode === "zoom" ? "default" : "grab")
             .on("click", (event, d) => {
               if (interactionMode === "zoom") return;
@@ -1216,9 +1196,9 @@ export default function VisxShapeEditor({
       .on("mouseleave", () => applySmoothingHover(null))
       .attr("cx", (d) => xScale(d.x))
       .attr("cy", (d) => yScale(d.y))
-      .attr("stroke", SHOW_KNOT_MARKERS ? "#0b172a" : "none")
-      .attr("stroke-width", SHOW_KNOT_MARKERS ? 1 : 0)
-      .attr("r", SHOW_KNOT_MARKERS ? 5 : 0)
+      .attr("stroke", "none")
+      .attr("stroke-width", 0)
+      .attr("r", 0)
       .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
       .style("cursor", interactionMode === "zoom" ? "default" : "grab");
 

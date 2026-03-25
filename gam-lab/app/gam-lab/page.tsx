@@ -4,12 +4,13 @@ import Link from "next/link";
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "./components/ShapeFunctionsPanel";
-import type { DragCurve, SmoothingAlgorithm } from "./components/VisxShapeEditor";
 import SidebarPanel from "./components/SidebarPanel";
+import FeatureModePanel from "./components/FeatureModePanel";
 import HelpCallout from "./components/HelpCallout";
 import styles from "./page.module.css";
 import { useGamLab } from "./hooks/useGamLab";
 import { useSidebarActions } from "./hooks/useSidebarActions";
+import { useToolSettings } from "./hooks/useToolSettings";
 import { useHelpTour } from "./hooks/useHelpTour";
 import { useAuditLogger } from "./hooks/useAuditLogger";
 import { useUiAuditLogger } from "./hooks/useUiAuditLogger";
@@ -61,8 +62,6 @@ function GamLabPageContent() {
     setElmAlpha,
     earlyStopping,
     setEarlyStopping,
-    scaleY,
-    setScaleY,
     selectedDataset,
     baselineKnots,
     fixedLinesByFeature,
@@ -76,8 +75,10 @@ function GamLabPageContent() {
     setActivePartialIdx,
     stats,
     lockedFeatures,
+    featureModes,
+    setFeatureMode,
     handleSave,
-    manualTrain,
+    train,
     manualRefitFromEdits,
     toggleFeatureLock,
     sidebarTab,
@@ -87,8 +88,6 @@ function GamLabPageContent() {
     historyCursor,
     recordAction,
     commitEdits,
-    notifyInteractionStart,
-    notifyInteractionEnd,
     undoLast,
     redoLast,
     deleteHistoryEntry,
@@ -134,28 +133,9 @@ function GamLabPageContent() {
 
   const helpTour = useHelpTour(setSidebarTab);
 
-  const { formatHistoryAction, formatHistoryDetail, applyMonotonic, addPointsInSelection } = useSidebarActions({
-    partial,
-    knotEdits,
-    knots,
-    selectedKnots,
-    setKnots,
-    setKnotEdits,
-    setSelectedKnots,
-    recordAction,
-    commitEdits,
-    history,
-    baselineKnots,
-  });
+  const { formatHistoryAction, formatHistoryDetail } = useSidebarActions({ history });
 
-  const [activeContinuousTool, setActiveContinuousTool] = useState<"drag" | "smooth">("drag");
-  const [dragFalloffRadius, setDragFalloffRadius] = useState(4);
-  const [dragRangeBoost, setDragRangeBoost] = useState(1);
-  const [dragCurve, setDragCurve] = useState<DragCurve>("gaussian");
-  const [smoothAmount, setSmoothAmount] = useState(0.5);
-  const [smoothingRangeMax, setSmoothingRangeMax] = useState(32);
-  const [smoothingSpeed, setSmoothingSpeed] = useState(1);
-  const [smoothingAlgorithm, setSmoothingAlgorithm] = useState<SmoothingAlgorithm>("gaussian");
+  const toolSettings = useToolSettings();
 
   if (!initialModel && !trainMode) {
     return null;
@@ -185,6 +165,7 @@ function GamLabPageContent() {
                 </Link>
               </div>
             </div>
+            <div className={styles.topPanels}>
             {modelSource === "train" ? (
               <section className={styles.panel}>
                 <div className={styles.panelHeader}>
@@ -202,17 +183,7 @@ function GamLabPageContent() {
                         type="button"
                         className={styles.panelButton}
                         onClick={() => {
-                          manualRefitFromEdits();
-                        }}
-                        disabled={status === "loading" || !result || modelType !== "igann_interactive"}
-                      >
-                        {status === "loading" ? "Refitting..." : "Refit from edits"}
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.panelButton}
-                        onClick={() => {
-                          manualTrain();
+                          train();
                         }}
                         disabled={status === "loading"}
                       >
@@ -267,21 +238,6 @@ function GamLabPageContent() {
                     <span className={styles.trainingToggleText}>
                       <span className={styles.trainingToggleLabel}>Center shapes</span>
                       <span className={styles.trainingToggleHint}>Enforce E[fj(Xj)] = 0</span>
-                    </span>
-                  </label>
-                  <label className={styles.trainingToggleCard}>
-                    <input
-                      className={styles.toggleInput}
-                      type="checkbox"
-                      checked={scaleY}
-                      onChange={(event) => setScaleY(event.target.checked)}
-                    />
-                    <span className={styles.toggleTrack}>
-                      <span className={styles.toggleThumb} />
-                    </span>
-                    <span className={styles.trainingToggleText}>
-                      <span className={styles.trainingToggleLabel}>Scale target</span>
-                      <span className={styles.trainingToggleHint}>Normalize y for training</span>
                     </span>
                   </label>
                 </div>
@@ -404,8 +360,40 @@ function GamLabPageContent() {
                     </label>
                   </div>
                 ) : null}
+
               </section>
             ) : null}
+            {result?.model?.model_type === "igann_interactive" && trainData ? (
+              <section className={styles.panel} style={{ flexShrink: 0 }}>
+                <div className={styles.panelHeader}>
+                  <div className={styles.trainingHeader}>
+                    <div className={styles.trainingTitleBlock}>
+                      <p className={styles.panelEyebrow}>Interactive</p>
+                      <h2 className={styles.panelTitle}>Feature Modes</h2>
+                    </div>
+                    {modelSource === "train" ? (
+                      <div className={styles.trainingActions}>
+                        <button
+                          type="button"
+                          className={styles.panelButton}
+                          onClick={manualRefitFromEdits}
+                          disabled={status === "loading"}
+                        >
+                          {status === "loading" ? "Refitting..." : "Refit from edits"}
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <FeatureModePanel
+                  trainData={trainData}
+                  shapes={currentVersion?.shapes ?? []}
+                  featureModes={featureModes}
+                  onSetFeatureMode={setFeatureMode}
+                />
+              </section>
+            ) : null}
+            </div>
             <div className={`${styles.tourTarget} ${styles.shapePanelSlot} ${helpTour.isStepActive("shapePanel") ? styles.tourTargetActive : ""}`}>
               <ShapeFunctionsPanel
                 showTourLabels={helpTour.isStepActive("shapePanel")}
@@ -430,26 +418,7 @@ function GamLabPageContent() {
                 onRedo={redoLast}
                 canRedo={historyCursor < history.length}
                 onSave={handleSave}
-                onInteractionStart={notifyInteractionStart}
-                onInteractionEnd={notifyInteractionEnd}
-                applyMonotonic={applyMonotonic}
-                addPointsInSelection={addPointsInSelection}
-                activeContinuousTool={activeContinuousTool}
-                setActiveContinuousTool={setActiveContinuousTool}
-                dragFalloffRadius={dragFalloffRadius}
-                setDragFalloffRadius={setDragFalloffRadius}
-                dragRangeBoost={dragRangeBoost}
-                setDragRangeBoost={setDragRangeBoost}
-                dragCurve={dragCurve}
-                setDragCurve={setDragCurve}
-                smoothAmount={smoothAmount}
-                setSmoothAmount={setSmoothAmount}
-                smoothingRangeMax={smoothingRangeMax}
-                setSmoothingRangeMax={setSmoothingRangeMax}
-                smoothingSpeed={smoothingSpeed}
-                setSmoothingSpeed={setSmoothingSpeed}
-                smoothingAlgorithm={smoothingAlgorithm}
-                setSmoothingAlgorithm={setSmoothingAlgorithm}
+                toolSettings={toolSettings}
                 hideLock={modelSource.startsWith("model:")}
               />
               <HelpCallout
@@ -482,12 +451,6 @@ function GamLabPageContent() {
                   activeKnots={partial ? knots : null}
                   selectedPointIndices={selectedKnots}
                   activeFeatureCategories={partial?.categories ?? null}
-                  onSelectFeature={(featureKey) => {
-                    const nextIdx = currentVersion?.shapes.findIndex((shape) => shape.key === featureKey) ?? -1;
-                    if (nextIdx >= 0) {
-                      setActivePartialIdx(nextIdx);
-                    }
-                  }}
                 />
                 <HelpCallout
                   target="sidebar"

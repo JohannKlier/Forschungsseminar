@@ -1,27 +1,24 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
-import VisxShapeEditor, { type DragCurve, type SmoothingAlgorithm } from "./VisxShapeEditor";
 import styles from "../page.module.css";
 import { KnotSet, ShapeFunction, TrainData } from "../types";
 import CategoricalShapePlot from "./CategoricalShapePlot";
+import VisxShapeEditor from "./VisxShapeEditor";
+import { InteractionHeatmap } from "./InteractionHeatmap";
 import { useShapeFunctionActions, type AlignSelectionMode } from "../hooks/useShapeFunctionActions";
 import ShapeFunctionsGridView from "./ShapeFunctionsGridView";
 import { computeFeatureImportance } from "../lib/importance";
 import TourLabel from "./TourLabel";
-
-type ContinuousActionTool = "drag" | "smooth";
-const EMPTY_FIXED_LINES: Array<{ id: string; knots: KnotSet }> = [];
+import { type ToolSettings } from "../hooks/useToolSettings";
 
 const ACTION_ICON_URLS = {
   align: "/action-icons/align.drawio.png",
   drag: "/action-icons/drag.drawio.png",
-  monInc: "/action-icons/mon_inc.drawio.png",
-  monDec: "/action-icons/mon_dec.drawio.png",
 };
 
-const ALIGN_ACTIONS: { value: AlignSelectionMode; label: string }[] = [
-  { value: "left", label: "Left" },
-  { value: "center", label: "Center" },
-  { value: "right", label: "Right" },
+const ALIGN_ACTIONS: { value: AlignSelectionMode; label: string; shortLabel: string }[] = [
+  { value: "left", label: "Align left", shortLabel: "Left" },
+  { value: "center", label: "Align center", shortLabel: "Center" },
+  { value: "right", label: "Align right", shortLabel: "Right" },
 ];
 
 type Props = {
@@ -49,23 +46,7 @@ type Props = {
   onSave: () => void;
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
-  applyMonotonic: (direction: "increasing" | "decreasing") => void;
-  activeContinuousTool: ContinuousActionTool;
-  setActiveContinuousTool: Dispatch<SetStateAction<ContinuousActionTool>>;
-  dragFalloffRadius: number;
-  setDragFalloffRadius: Dispatch<SetStateAction<number>>;
-  dragRangeBoost: number;
-  setDragRangeBoost: Dispatch<SetStateAction<number>>;
-  smoothAmount: number;
-  setSmoothAmount: Dispatch<SetStateAction<number>>;
-  smoothingRangeMax: number;
-  setSmoothingRangeMax: Dispatch<SetStateAction<number>>;
-  smoothingSpeed: number;
-  setSmoothingSpeed: Dispatch<SetStateAction<number>>;
-  dragCurve: DragCurve;
-  setDragCurve: Dispatch<SetStateAction<DragCurve>>;
-  smoothingAlgorithm: SmoothingAlgorithm;
-  setSmoothingAlgorithm: Dispatch<SetStateAction<SmoothingAlgorithm>>;
+  toolSettings: ToolSettings;
   hideLock?: boolean;
 };
 
@@ -94,37 +75,22 @@ export default function ShapeFunctionsPanel({
   onSave,
   onInteractionStart,
   onInteractionEnd,
-  applyMonotonic,
-  activeContinuousTool,
-  setActiveContinuousTool,
-  dragFalloffRadius,
-  setDragFalloffRadius,
-  dragRangeBoost,
-  setDragRangeBoost,
-  smoothAmount,
-  setSmoothAmount,
-  smoothingRangeMax,
-  setSmoothingRangeMax,
-  smoothingSpeed,
-  setSmoothingSpeed,
-  dragCurve,
-  setDragCurve,
-  smoothingAlgorithm,
-  setSmoothingAlgorithm,
+  toolSettings,
   hideLock = false,
 }: Props) {
+  const {
+    activeContinuousTool, setActiveContinuousTool,
+    dragFalloffRadius, dragRangeBoost, dragCurve, setDragCurve,
+    smoothAmount, smoothingRangeMax, setSmoothingRangeMax,
+    smoothingSpeed, smoothingAlgorithm, setSmoothingAlgorithm,
+  } = toolSettings;
   const [panLocked, setPanLocked] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [viewMode, setViewMode] = useState<"single" | "grid">("single");
-  const [alignMenuOpen, setAlignMenuOpen] = useState(false);
   const partial = useMemo(() => shapes[activePartialIdx] ?? shapes[0] ?? null, [shapes, activePartialIdx]);
   const interactionMode: "select" | "zoom" = panLocked || spacePanActive ? "zoom" : "select";
   const isPanning = interactionMode === "zoom";
   const smoothingMode = activeContinuousTool === "smooth";
-
-  useEffect(() => {
-    setAlignMenuOpen(false);
-  }, [activePartialIdx, selectedKnots.length, isPanning]);
 
   useEffect(() => {
     const isEditableTarget = (target: EventTarget | null) => {
@@ -161,6 +127,7 @@ export default function ShapeFunctionsPanel({
   const featureImportance = useMemo(() => {
     const rawByKey: Record<string, number> = {};
     shapes.forEach((s) => {
+      if (s.editableZ) return; // skip 2-D interaction shapes
       const scatterX = trainData.trainX[s.key] ?? [];
       const shape = baselineKnots[s.key] ?? { x: s.editableX ?? [], y: s.editableY ?? [] };
       rawByKey[s.key] = Math.max(0, computeFeatureImportance(s, scatterX, shape));
@@ -178,6 +145,7 @@ export default function ShapeFunctionsPanel({
     const ranges: Record<string, { min: number; max: number }> = {};
     const allVals: number[] = [];
     shapes.forEach((s) => {
+      if (s.editableZ) return; // skip 2-D interaction shapes
       if (!s.categories || !s.categories.length) return;
       const baseKnots = baselineKnots[s.key] ?? { x: s.editableX ?? [], y: s.editableY ?? [] };
       (baseKnots.y ?? []).forEach((v) => {
@@ -246,7 +214,7 @@ export default function ShapeFunctionsPanel({
                 {activeFeatureLocked ? "🔒" : "🔓"}
               </button>
             ) : null}
-            <div className={`${styles.panelToggle} ${styles.tourLabelAnchor}`}>
+            <div className={`${styles.panelToggle} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
               {showTourLabels ? (
                 <TourLabel
                   label="View mode"
@@ -307,7 +275,9 @@ export default function ShapeFunctionsPanel({
         const label = s.label || s.key || `x${activePartialIdx + 1}`;
         const baseKnots = knotEdits[s.key] ?? baselineKnots[s.key] ?? { x: s.editableX ?? [], y: s.editableY ?? [] };
         const scatterX = trainData.trainX[s.key] ?? [];
-        const plot = s.categories && s.categories.length ? (
+        const plot = s.editableZ ? (
+          <InteractionHeatmap shape={s} />
+        ) : s.categories && s.categories.length ? (
           <CategoricalShapePlot
             categories={s.categories}
             scatterX={scatterX}
@@ -328,7 +298,7 @@ export default function ShapeFunctionsPanel({
             key={s.key}
             knots={baseKnots}
             baseline={baselineKnots[s.key]}
-            fixedLines={fixedLinesByFeature[s.key] ?? EMPTY_FIXED_LINES}
+            fixedLines={fixedLinesByFeature[s.key] ?? []}
             scatterX={scatterX}
             featureKey={s.key}
             interactionMode={interactionMode}
@@ -350,10 +320,10 @@ export default function ShapeFunctionsPanel({
             smoothingAlgorithm={smoothingAlgorithm}
           />
         );
-        const showContinuousTools = !s.categories?.length;
+        const showContinuousTools = !s.editableZ && !s.categories?.length;
         return (
           <>
-            <div className={`${styles.featureNavCentered} ${styles.tourLabelAnchor}`}>
+            <div className={`${styles.featureNavCentered} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
               {showTourLabels ? (
                 <TourLabel
                   label="Feature selector"
@@ -382,8 +352,9 @@ export default function ShapeFunctionsPanel({
               >
                 {shapes.map((sf, idx) => (
                   <option key={sf.key} value={idx}>
-                    {sf.categories && sf.categories.length ? "Cat • " : "Cont • "}
-                    {sf.label || sf.key || `x${idx + 1}`} • I={formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}
+                    {sf.editableZ ? "2D • " : sf.categories && sf.categories.length ? "Cat • " : "Cont • "}
+                    {sf.label || sf.key || `x${idx + 1}`}
+                    {!sf.editableZ ? ` • I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}` : ""}
                   </option>
                 ))}
               </select>
@@ -397,7 +368,7 @@ export default function ShapeFunctionsPanel({
               </button>
             </div>
             <div className={styles.plotWithActionsRow}>
-              <div className={`${styles.plotArea} ${styles.tourLabelAnchor}`}>
+              <div className={`${styles.plotArea} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
                 {showTourLabels ? (
                   <TourLabel
                     label="Plot"
@@ -413,7 +384,7 @@ export default function ShapeFunctionsPanel({
                 ) : null}
                 {plot}
               </div>
-              <div className={`${styles.actionsScroll} ${styles.tourLabelAnchor}`}>
+              <div className={`${styles.actionsScroll} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
                 {showTourLabels ? (
                 <TourLabel
                   label="Tools"
@@ -475,10 +446,9 @@ export default function ShapeFunctionsPanel({
                             <div className={styles.actionChips}>
                               {(
                                 [
-                                  { value: "gaussian", label: "Gaussian" },
-                                  { value: "linear", label: "Linear" },
-                                  { value: "cosine", label: "Cosine" },
-                                  { value: "sharp", label: "Sharp" },
+                                  { value: "gaussian", label: "Gaussian", icon: "G" },
+                                  { value: "linear", label: "Linear", icon: "L" },
+                                  { value: "sharp", label: "Sharp", icon: "S" },
                                 ] as const
                               ).map(({ value, label }) => (
                                 <button
@@ -486,17 +456,15 @@ export default function ShapeFunctionsPanel({
                                   type="button"
                                   className={`${styles.actionChip} ${dragCurve === value ? styles.actionChipActive : ""}`}
                                   onClick={() => setDragCurve(value)}
+                                  aria-label={label}
+                                  title={label}
                                 >
-                                  {label}
+                                  <span className={styles.actionChipIcon} aria-hidden="true">
+                                    {label.charAt(0)}
+                                  </span>
                                 </button>
                               ))}
                             </div>
-                            <span className={styles.actionSettingDesc}>
-                              {dragCurve === "gaussian" && "Bell-shaped falloff — smooth, natural feel"}
-                              {dragCurve === "linear" && "Even ramp from center to edge — predictable"}
-                              {dragCurve === "cosine" && "S-shaped rolloff — softer than linear"}
-                              {dragCurve === "sharp" && "Tight bell — localized, precise pull"}
-                            </span>
                           </>
                         ) : (
                           <>
@@ -504,10 +472,9 @@ export default function ShapeFunctionsPanel({
                             <div className={styles.actionChips}>
                               {(
                                 [
-                                  { value: "gaussian", label: "Gaussian" },
-                                  { value: "box", label: "Box" },
-                                  { value: "median", label: "Median" },
-                                  { value: "exponential", label: "Exp." },
+                                  { value: "gaussian", label: "Gaussian", icon: "G" },
+                                  { value: "median", label: "Median", icon: "M" },
+                                  { value: "exponential", label: "Exponential", icon: "E" },
                                 ] as const
                               ).map(({ value, label }) => (
                                 <button
@@ -515,8 +482,12 @@ export default function ShapeFunctionsPanel({
                                   type="button"
                                   className={`${styles.actionChip} ${smoothingAlgorithm === value ? styles.actionChipActive : ""}`}
                                   onClick={() => setSmoothingAlgorithm(value)}
+                                  aria-label={label}
+                                  title={label}
                                 >
-                                  {label}
+                                  <span className={styles.actionChipIcon} aria-hidden="true">
+                                    {label.charAt(0)}
+                                  </span>
                                 </button>
                               ))}
                             </div>
@@ -539,50 +510,48 @@ export default function ShapeFunctionsPanel({
                     </div>
                   ) : null}
                   <hr className={styles.actionsDivider} />
-                  <div className={styles.actionsGroup}>
-                    <span className={styles.actionsGroupLabel}>{`selection (${selectedKnots.length})`}</span>
+                  <div className={`${styles.actionsGroup} ${selectedKnots.length === 0 ? styles.actionsGroupMuted : ""}`}>
+                    <span className={styles.actionsGroupLabel}>Selection</span>
                     <div className={styles.selectionActionsGrid}>
                       {!s.categories?.length ? (
                         <button
                           className={styles.selectionActionButton}
                           type="button"
-                          disabled={isPanning}
+                          disabled={isPanning || selectedKnots.length === 0}
                           onClick={interpolateSelection}
                         >
                           <img src={ACTION_ICON_URLS.drag} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
-                          <span className={styles.selectionActionLabel}>Interp.</span>
+                          <span className={styles.selectionActionLabel}>Straight</span>
                         </button>
                       ) : null}
-                      <div className={`${styles.selectionActionButton} ${styles.selectionActionButtonWide}`}>
-                        <button
-                          className={styles.selectionActionMenuTrigger}
-                          type="button"
-                          disabled={isPanning || selectedKnots.length === 0}
-                          onClick={() => setAlignMenuOpen((open) => !open)}
-                        >
-                          <img src={ACTION_ICON_URLS.align} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
-                          <span className={styles.selectionActionLabel}>Align</span>
-                          <span className={styles.selectionActionHint}>Default: Left</span>
-                        </button>
-                        {alignMenuOpen ? (
-                          <div className={styles.selectionActionInlineChoices}>
-                            {ALIGN_ACTIONS.map(({ value, label }) => (
-                              <button
-                                key={value}
-                                className={`${styles.selectionActionChoice} ${value === "left" ? styles.selectionActionChoiceDefault : ""}`}
-                                type="button"
-                                disabled={isPanning || selectedKnots.length === 0}
-                                onClick={() => {
-                                  alignSelection(value);
-                                  setAlignMenuOpen(false);
-                                }}
-                              >
-                                {label}
-                              </button>
-                            ))}
+                      {!s.categories?.length
+                        ? ALIGN_ACTIONS.map(({ value, label, shortLabel }) => (
+                            <button
+                              key={value}
+                              className={styles.selectionActionButton}
+                              type="button"
+                              disabled={isPanning || selectedKnots.length === 0}
+                              onClick={() => alignSelection(value)}
+                              aria-label={label}
+                              title={label}
+                            >
+                              <img src={ACTION_ICON_URLS.align} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
+                              <span className={styles.selectionActionLabel}>{shortLabel}</span>
+                            </button>
+                          ))
+                        : (
+                          <div className={`${styles.selectionActionButton} ${styles.selectionActionButtonWide}`}>
+                            <button
+                              className={styles.selectionActionMenuTrigger}
+                              type="button"
+                              disabled={isPanning || selectedKnots.length === 0}
+                            >
+                              <img src={ACTION_ICON_URLS.align} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
+                              <span className={styles.selectionActionLabel}>Align</span>
+                              <span className={styles.selectionActionHint}>Select values</span>
+                            </button>
                           </div>
-                        ) : null}
-                      </div>
+                        )}
                       {s.categories?.length ? (
                         <button
                           className={styles.selectionActionButton}
@@ -593,28 +562,6 @@ export default function ShapeFunctionsPanel({
                           <span style={{ fontSize: "1rem", fontWeight: 700, lineHeight: 1 }}>0</span>
                           <span className={styles.selectionActionLabel}>Zero</span>
                         </button>
-                      ) : null}
-                      {!s.categories?.length ? (
-                        <>
-                          <button
-                            className={styles.selectionActionButton}
-                            type="button"
-                            disabled={isPanning || selectedKnots.length === 0}
-                            onClick={() => applyMonotonic("increasing")}
-                          >
-                            <img src={ACTION_ICON_URLS.monInc} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
-                            <span className={styles.selectionActionLabel}>Mon ↑</span>
-                          </button>
-                          <button
-                            className={styles.selectionActionButton}
-                            type="button"
-                            disabled={isPanning || selectedKnots.length === 0}
-                            onClick={() => applyMonotonic("decreasing")}
-                          >
-                            <img src={ACTION_ICON_URLS.monDec} alt="" aria-hidden="true" className={styles.selectionActionIcon} />
-                            <span className={styles.selectionActionLabel}>Mon ↓</span>
-                          </button>
-                        </>
                       ) : null}
                     </div>
                   </div>

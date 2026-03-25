@@ -1,9 +1,9 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef } from "react";
 import styles from "../page.module.css";
-import { KnotSet, ShapeFunction, StatItem, TrainData } from "../types";
+import { HistoryEntry, KnotSet, ShapeFunction, SidebarTab, StatItem, TrainData } from "../types";
 import TourLabel from "./TourLabel";
-
-type HistoryEntry = { featureKey: string; action: string; ts: number; changes: { x: number; before?: number; after?: number; delta?: number }[] };
+import FeatureMiniHistogram from "./FeatureMiniHistogram";
+import { InteractionHeatmap } from "./InteractionHeatmap";
 
 function HistoryPanel({
   history,
@@ -23,15 +23,18 @@ function HistoryPanel({
   }, [history.length]);
 
   // Group entries by featureKey, preserving insertion order of first occurrence.
-  const groups: { featureKey: string; entries: { entry: HistoryEntry; index: number }[] }[] = [];
-  const groupIdx: Record<string, number> = {};
-  history.forEach((entry, index) => {
-    if (groupIdx[entry.featureKey] === undefined) {
-      groupIdx[entry.featureKey] = groups.length;
-      groups.push({ featureKey: entry.featureKey, entries: [] });
-    }
-    groups[groupIdx[entry.featureKey]].entries.push({ entry, index });
-  });
+  const groups = useMemo(() => {
+    const result: { featureKey: string; entries: { entry: HistoryEntry; index: number }[] }[] = [];
+    const groupIdx: Record<string, number> = {};
+    history.forEach((entry, index) => {
+      if (groupIdx[entry.featureKey] === undefined) {
+        groupIdx[entry.featureKey] = result.length;
+        result.push({ featureKey: entry.featureKey, entries: [] });
+      }
+      result[groupIdx[entry.featureKey]].entries.push({ entry, index });
+    });
+    return result;
+  }, [history]);
 
   return (
     <div className={styles.historyScroll}>
@@ -43,24 +46,27 @@ function HistoryPanel({
               <span className={styles.historyGroupLabel}>{featureKey}</span>
               <span className={styles.historyGroupCount}>{entries.length}</span>
             </div>
-            {entries.map(({ entry, index }) => (
-              <div key={`${entry.ts}-${entry.action}`} className={styles.historyItem}>
-                <div className={styles.historyActionRow}>
-                  <span className={styles.settingsValue}>{formatHistoryAction(entry.action)}</span>
-                  <button
-                    type="button"
-                    className={styles.historyDeleteButton}
-                    onClick={() => onDeleteHistoryEntry(index)}
-                    aria-label="Delete history entry"
-                  >
-                    ×
-                  </button>
+            {entries.map(({ entry, index }) => {
+              const detail = formatHistoryDetail(index);
+              return (
+                <div key={`${entry.ts}-${entry.action}`} className={styles.historyItem}>
+                  <div className={styles.historyActionRow}>
+                    <span className={styles.settingsValue}>{formatHistoryAction(entry.action)}</span>
+                    <button
+                      type="button"
+                      className={styles.historyDeleteButton}
+                      onClick={() => onDeleteHistoryEntry(index)}
+                      aria-label="Delete history entry"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {detail ? (
+                    <span className={styles.historyDetail}>{detail}</span>
+                  ) : null}
                 </div>
-                {formatHistoryDetail(index) ? (
-                  <span className={styles.historyDetail}>{formatHistoryDetail(index)}</span>
-                ) : null}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )) : (
           <p className={styles.settingsHint}>No actions yet.</p>
@@ -78,7 +84,6 @@ function FeatureDistributionsPanel({
   activeKnots,
   selectedPointIndices,
   activeFeatureCategories,
-  onSelectFeature,
 }: {
   shapes: ShapeFunction[];
   trainData: TrainData;
@@ -86,7 +91,6 @@ function FeatureDistributionsPanel({
   activeKnots: KnotSet | null;
   selectedPointIndices: number[];
   activeFeatureCategories: string[] | null;
-  onSelectFeature: (featureKey: string) => void;
 }) {
   const selectedRowMask = useMemo(() => {
     if (!activeFeatureKey || !selectedPointIndices.length) return null;
@@ -130,8 +134,14 @@ function FeatureDistributionsPanel({
   const featureRows = useMemo(
     () =>
       shapes.map((shape) => {
-        const values = trainData.trainX[shape.key] ?? [];
         const label = trainData.featureLabels[shape.key] ?? shape.label ?? shape.key;
+
+        // Interaction shapes: show a mini heatmap instead of a distribution
+        if (shape.editableZ) {
+          return { key: shape.key, label, type: "interaction" as const, shape };
+        }
+
+        const values = trainData.trainX[shape.key] ?? [];
         if (shape.categories?.length) {
           const counts = new Map<string, number>();
           const selectedCounts = new Map<string, number>();
@@ -192,14 +202,34 @@ function FeatureDistributionsPanel({
   return (
     <div className={styles.featureDistributionScroll}>
       <p className={styles.settingsLabel}>Features</p>
+      <div className={styles.featureDistributionLegend} aria-hidden="true">
+        <span className={styles.featureDistributionLegendItem}>
+          <span className={`${styles.featureDistributionLegendSwatch} ${styles.featureDistributionLegendSwatchAll}`} />
+          All
+        </span>
+        <span className={styles.featureDistributionLegendItem}>
+          <span className={`${styles.featureDistributionLegendSwatch} ${styles.featureDistributionLegendSwatchSelected}`} />
+          Selected
+        </span>
+      </div>
       <div className={styles.featureDistributionList}>
         {featureRows.map((feature) => {
+          if (feature.type === "interaction") {
+            return (
+              <div key={feature.key} className={styles.featureDistributionCard}>
+                <div className={styles.featureDistributionHeader}>
+                  <span className={styles.featureDistributionName}>{feature.label}</span>
+                </div>
+                <div className={styles.featureDistributionHistogram}>
+                  <InteractionHeatmap shape={feature.shape} width={312} height={46} />
+                </div>
+              </div>
+            );
+          }
           return (
-            <button
+            <div
               key={feature.key}
-              type="button"
               className={styles.featureDistributionCard}
-              onClick={() => onSelectFeature(feature.key)}
             >
               <div className={styles.featureDistributionHeader}>
                 <span className={styles.featureDistributionName}>{feature.label}</span>
@@ -233,26 +263,7 @@ function FeatureDistributionsPanel({
               ) : (
                 <>
                   <div className={styles.featureDistributionHistogram} aria-hidden="true">
-                    {(() => {
-                      const maxBin = Math.max(...feature.bins, 1);
-                      const maxSelectedBin = Math.max(...feature.selectedBins, 1);
-                      return feature.bins.map((bin, index) => {
-                        return (
-                          <div
-                            key={`${feature.key}-${index}`}
-                            className={styles.featureDistributionBin}
-                            style={{ height: `${(bin / maxBin) * 100}%` }}
-                          >
-                            {(feature.selectedBins[index] ?? 0) > 0 ? (
-                              <div
-                                className={styles.featureDistributionBinSelected}
-                                style={{ height: `${((feature.selectedBins[index] ?? 0) / maxSelectedBin) * 100}%` }}
-                              />
-                            ) : null}
-                          </div>
-                        );
-                      });
-                    })()}
+                    <FeatureMiniHistogram bins={feature.bins} selectedBins={feature.selectedBins} />
                   </div>
                   <div className={styles.featureDistributionRange}>
                     <span>{feature.min?.toFixed(2) ?? "—"}</span>
@@ -260,7 +271,7 @@ function FeatureDistributionsPanel({
                   </div>
                 </>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
@@ -268,10 +279,11 @@ function FeatureDistributionsPanel({
   );
 }
 
+
 type Props = {
   showTourLabels?: boolean;
-  sidebarTab: "edit" | "history" | "features";
-  setSidebarTab: Dispatch<SetStateAction<"edit" | "history" | "features">>;
+  sidebarTab: SidebarTab;
+  setSidebarTab: Dispatch<SetStateAction<SidebarTab>>;
   stats: StatItem[] | null;
   history: HistoryEntry[];
   formatHistoryAction: (action: string) => string;
@@ -283,7 +295,6 @@ type Props = {
   activeKnots: KnotSet | null;
   selectedPointIndices: number[];
   activeFeatureCategories: string[] | null;
-  onSelectFeature: (featureKey: string) => void;
 };
 
 export default function SidebarPanel({
@@ -301,14 +312,13 @@ export default function SidebarPanel({
   activeKnots,
   selectedPointIndices,
   activeFeatureCategories,
-  onSelectFeature,
 }: Props) {
   return (
     <div className={`${styles.settingsRail} ${showTourLabels ? styles.tourFocus : ""}`}>
       <div className={styles.sidebarHeader}>
         <span className={styles.logo}>GAM Lab</span>
       </div>
-      <div className={`${styles.sidebarTabs} ${styles.tourLabelAnchor}`}>
+      <div className={`${styles.sidebarTabs} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
         {showTourLabels ? (
           <TourLabel
             label="Tabs"
@@ -347,16 +357,15 @@ export default function SidebarPanel({
       {sidebarTab === "edit" ? (
         <>
           <div className={styles.settingsSection}>
-            <div className={styles.tourLabelAnchor}>
+            <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
               {showTourLabels ? (
                 <TourLabel
                   label="Statistics"
                   title="Read model quality at a glance"
-                  description="These bars compare the original model, the latest trained or refit version, and the current live edited state."
+                  description="These bars compare the original model with the latest trained or refit version."
                   details={[
                     "Initial comes from the very first training run.",
                     "Latest comes from the most recent train or refit result.",
-                    "Current is recomputed in the frontend while you edit.",
                   ]}
                   placement="top-left"
                 />
@@ -366,6 +375,10 @@ export default function SidebarPanel({
               <span className={styles.statsLegendItem}>
                 <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchInitial}`} />
                 Initial
+              </span>
+              <span className={styles.statsLegendItem}>
+                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchLast}`} />
+                Last
               </span>
               <span className={styles.statsLegendItem}>
                 <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchLatest}`} />
@@ -385,11 +398,11 @@ export default function SidebarPanel({
                 </div>
               );
             }
-            const { initial, latest, current } = stat;
+            const { initial, last, latest, current } = stat;
             const format = stat.format ?? "0.000";
             const digits = format.includes("0.00") ? 2 : 3;
             const fmt = (v: number | null) => (Number.isFinite(v) ? (v as number).toFixed(digits) : "—");
-            const maxVal = Math.max(Math.abs(initial ?? 0), Math.abs(latest ?? 0), Math.abs(current ?? 0), 1e-6);
+            const maxVal = Math.max(Math.abs(initial ?? 0), Math.abs(last ?? 0), Math.abs(latest ?? 0), Math.abs(current ?? 0), 1e-6);
             const pct = (v: number | null) =>
               Number.isFinite(v) ? `${(Math.abs(v as number) / maxVal) * 100}%` : "0%";
             return (
@@ -403,6 +416,15 @@ export default function SidebarPanel({
                       <div className={styles.statsBar}>
                         <div className={`${styles.statsBarValue} ${styles.statsBarValueInitial}`} style={{ width: pct(initial) }}>
                           <span className={styles.statsBarNumber}>{fmt(initial)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  {last !== null ? (
+                    <div className={styles.statsMetricRow}>
+                      <div className={styles.statsBar}>
+                        <div className={`${styles.statsBarValue} ${styles.statsBarValueLast}`} style={{ width: pct(last) }}>
+                          <span className={styles.statsBarNumber}>{fmt(last)}</span>
                         </div>
                       </div>
                     </div>
@@ -433,7 +455,7 @@ export default function SidebarPanel({
           </div>
         </>
       ) : sidebarTab === "history" ? (
-        <div className={styles.tourLabelAnchor}>
+        <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
           {showTourLabels ? (
             <TourLabel
               label="Edit history"
@@ -454,7 +476,7 @@ export default function SidebarPanel({
           />
         </div>
       ) : (
-        <div className={styles.tourLabelAnchor}>
+        <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
           {showTourLabels ? (
             <TourLabel
               label="Feature index"
@@ -463,7 +485,7 @@ export default function SidebarPanel({
               details={[
                 "Continuous features use mini histograms.",
                 "Categorical features use per-category bars.",
-                "Click a card to jump the editor to that feature.",
+                "These cards are informational summaries of the training data.",
               ]}
               placement="top-left"
             />
@@ -475,7 +497,6 @@ export default function SidebarPanel({
             activeKnots={activeKnots}
             selectedPointIndices={selectedPointIndices}
             activeFeatureCategories={activeFeatureCategories}
-            onSelectFeature={onSelectFeature}
           />
         </div>
       )}

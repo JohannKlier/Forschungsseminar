@@ -1,12 +1,22 @@
 export type KnotSet = { x: number[]; y: number[] };
 
+export type FeatureMode = "lock" | "deactivate";
+
 // Shape function knots for a single feature — no raw data attached.
+// When editableZ is present this is a 2-D interaction surface (read-only).
 export type ShapeFunction = {
   key: string;
   label: string;
   editableX?: number[];
   editableY?: number[];
   categories?: string[];
+  // 2-D interaction fields — only set for pairwise interaction shapes
+  label2?: string;
+  gridX?: number[];
+  gridX2?: number[];
+  xCategories?: string[];
+  yCategories?: string[];
+  editableZ?: number[][];
 };
 
 // Raw training/test data, separated from model and shape functions.
@@ -43,6 +53,7 @@ export type ShapeFunctionVersion = {
   source: "train" | "refit";
   center_shapes: boolean;
   locked_features: string[];
+  feature_modes?: Record<string, FeatureMode>;
   refit_from_edits: boolean;
   intercept: number;
   trainMetrics: MetricSummary;
@@ -58,12 +69,6 @@ export type TrainResponse = {
   source?: "service" | "local" | "model" | "saved";
 };
 
-export type DatasetOption = {
-  id: string;
-  label: string;
-  summary: string;
-};
-
 export type ModelDetails = {
   contribs: number[][];
   totals: number[];
@@ -77,12 +82,31 @@ export type Models = {
   residuals: number[];
 };
 
+export type DatasetOption = {
+  id: string;
+  label: string;
+  summary: string;
+};
+
+// Tab identifiers for the sidebar panel.
+export type SidebarTab = "edit" | "history" | "features";
+
 export type StatItem =
   | { label: string; kind: "value"; value: string }
   // initial  = server metrics from the very first train (never changes)
+  // last     = server metrics from the version just before the current one
   // latest   = server metrics from the most recent train/refit
   // current  = live frontend metrics recalculated from edited shape functions
-  | { label: string; kind: "bar"; initial: number | null; latest: number | null; current: number | null; lowerIsBetter?: boolean; format?: string };
+  | { label: string; kind: "bar"; initial: number | null; last: number | null; latest: number | null; current: number | null; lowerIsBetter?: boolean; format?: string };
+
+export type HistoryChange = { x: number; before?: number; after?: number; delta?: number };
+export type HistoryEntry = {
+  featureKey: string;
+  action: string;
+  ts: number;
+  changes: HistoryChange[];
+};
+
 
 export type MetricSummary = {
   count: number;

@@ -1,9 +1,81 @@
+/* Banner right: tab bar + "choose another model" link */
+.bannerRight {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* Tab bar */
+.tabBar {
+  display: flex;
+  background: #f1f5f9;
+  border-radius: 0.5rem;
+  padding: 0.2rem;
+  gap: 0.15rem;
+}
+
+.tabButton {
+  border: none;
+  background: transparent;
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.85rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.tabButton:hover {
+  color: #0f172a;
+}
+
+.tabButtonActive {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Feature panel full-width override */
+.featurePanel {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .trainHeader {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.1rem;
+}
+
+.collapseToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+}
+
+.collapseToggle:hover .collapseChevron {
+  color: #0f172a;
+}
+
+.collapseChevron {
+  display: inline-block;
+  font-size: 1rem;
+  color: #94a3b8;
+  transition: transform 0.2s ease, color 0.15s ease;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 .trainTitleBlock {
@@ -171,4 +243,95 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 0.65rem;
+}
+
+/* Refit actions row: primary + secondary buttons side by side */
+.refitActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Secondary "Train" button shown when model is already loaded */
+.retrainButton {
+  border: 1.5px solid #cbd5e1;
+  border-radius: 0.6rem;
+  padding: 0 0.9rem;
+  height: 34px;
+  background: transparent;
+  color: #475569;
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+  white-space: nowrap;
+}
+
+.retrainButton:hover {
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.retrainButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Inline confirmation banner */
+.confirmBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  margin-bottom: 0.85rem;
+  border-radius: 0.6rem;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+}
+
+.confirmText {
+  font-size: 0.88rem;
+  color: #9a3412;
+  font-weight: 500;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.confirmCancelButton {
+  border: 1.5px solid #cbd5e1;
+  border-radius: 0.5rem;
+  padding: 0 0.75rem;
+  height: 28px;
+  background: transparent;
+  color: #475569;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.confirmCancelButton:hover {
+  border-color: #94a3b8;
+}
+
+.confirmTrainButton {
+  border: none;
+  border-radius: 0.5rem;
+  padding: 0 0.75rem;
+  height: 28px;
+  background: #9a3412;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.confirmTrainButton:hover {
+  opacity: 0.85;
 }
