@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { DatasetOption, FeatureMode, HistoryChange, HistoryEntry, KnotSet, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, SidebarTab, StatItem, TrainData, TrainResponse } from "../types";
+import { DatasetOption, FeatureMode, FeatureOperation, HistoryChange, HistoryEntry, KnotSet, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, SidebarTab, StatItem, TrainData, TrainResponse } from "../types";
 import { loadModel, refitModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
 import { type AuditLogFn } from "../lib/audit";
@@ -40,6 +40,9 @@ type InitOptions = {
     dataset: string;
     model_type: "igann" | "igann_interactive";
     center_shapes: boolean;
+    selected_features?: string[];
+    selected_interactions?: string[];
+    selected_operations?: FeatureOperation[];
     points: number;
     seed: number;
     n_estimators: number;
@@ -62,6 +65,9 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [dataset, setDataset] = useState(DATASETS[0].id);
   const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann");
   const [centerShapes, setCenterShapes] = useState(false);
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [selectedInteractions, setSelectedInteractions] = useState<string[] | undefined>(undefined);
+  const [selectedOperations, setSelectedOperations] = useState<FeatureOperation[] | undefined>(undefined);
   const [shapePoints, setShapePoints] = useState(250);
   const [seed, setSeed] = useState(DEFAULT_SEED);
   const [nEstimators, setNEstimators] = useState(100);
@@ -153,6 +159,9 @@ export const useGamLab = (options: InitOptions = {}) => {
       dataset?: string;
       model_type?: "igann" | "igann_interactive";
       center_shapes?: boolean;
+      selected_features?: string[];
+      selected_interactions?: string[];
+      selected_operations?: FeatureOperation[];
       points?: number;
       seed?: number;
       n_estimators?: number;
@@ -167,6 +176,9 @@ export const useGamLab = (options: InitOptions = {}) => {
       dataset: overrides?.dataset ?? dataset,
       model_type: overrides?.model_type ?? modelType,
       center_shapes: overrides?.center_shapes ?? centerShapes,
+      selected_features: overrides?.selected_features ?? selectedFeatures,
+      selected_interactions: overrides?.selected_interactions ?? selectedInteractions,
+      selected_operations: overrides?.selected_operations ?? selectedOperations,
       seed: overrides?.seed ?? seed,
       points: overrides?.points ?? shapePoints,
       n_estimators: overrides?.n_estimators ?? nEstimators,
@@ -219,6 +231,9 @@ export const useGamLab = (options: InitOptions = {}) => {
       setDataset(options.initialTrain.dataset);
       setModelType(options.initialTrain.model_type);
       setCenterShapes(options.initialTrain.center_shapes);
+      setSelectedFeatures(options.initialTrain.selected_features ?? []);
+      setSelectedInteractions(options.initialTrain.selected_interactions ?? []);
+      setSelectedOperations(options.initialTrain.selected_operations);
       setShapePoints(options.initialTrain.points);
       setSeed(options.initialTrain.seed);
       setNEstimators(options.initialTrain.n_estimators);
@@ -231,6 +246,9 @@ export const useGamLab = (options: InitOptions = {}) => {
         dataset: options.initialTrain.dataset,
         model_type: options.initialTrain.model_type,
         center_shapes: options.initialTrain.center_shapes,
+        selected_features: options.initialTrain.selected_features ?? [],
+        selected_interactions: options.initialTrain.selected_interactions ?? [],
+        selected_operations: options.initialTrain.selected_operations,
         points: options.initialTrain.points,
         seed: options.initialTrain.seed,
         n_estimators: options.initialTrain.n_estimators,
@@ -274,6 +292,12 @@ export const useGamLab = (options: InitOptions = {}) => {
 
       // Restore UI parameters from stored model info.
       setDataset(payload.model.dataset);
+      setSelectedFeatures(payload.model.selected_features ?? Object.keys(payload.data.featureLabels));
+      setSelectedInteractions(
+        payload.model.selected_interactions
+          ?? payload.version.shapes.filter((shape) => shape.editableZ).map((shape) => shape.key),
+      );
+      setSelectedOperations(payload.model.selected_operations);
       if (payload.model.model_type === "igann" || payload.model.model_type === "igann_interactive") {
         setModelType(payload.model.model_type);
       }
@@ -455,6 +479,9 @@ export const useGamLab = (options: InitOptions = {}) => {
         dataset,
         model_type: modelType,
         center_shapes: centerShapes,
+        selected_features: modelInfo.selected_features ?? Object.keys(trainData?.featureLabels ?? {}),
+        selected_interactions: selectedInteractions ?? modelInfo.selected_interactions ?? currentVersion.shapes.filter((shape) => shape.editableZ).map((shape) => shape.key),
+        selected_operations: selectedOperations ?? modelInfo.selected_operations,
         seed,
         points: refitPoints,
         n_estimators: nEstimators,
@@ -906,6 +933,12 @@ export const useGamLab = (options: InitOptions = {}) => {
     setDataset,
     setModelType,
     setCenterShapes,
+    selectedFeatures,
+    setSelectedFeatures,
+    selectedInteractions,
+    setSelectedInteractions,
+    selectedOperations,
+    setSelectedOperations,
     shapePoints,
     setShapePoints,
     seed,
@@ -924,6 +957,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     setScaleY,
     status,
     result,
+    models,
     trainData,
     currentVersion,
     activePartialIdx,

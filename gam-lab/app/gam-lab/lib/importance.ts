@@ -37,3 +37,15 @@ export const computeFeatureImportance = (shape: ShapeFunction, scatterX: number[
   }
   return computeVariance(finiteValues(knots.y));
 };
+
+export const computeShapeImportance = (
+  shape: ShapeFunction,
+  scatterX: Array<number | string>,
+  knots: KnotSet,
+) => {
+  if (shape.editableZ) {
+    const values = scatterX.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+    return computeVariance(values);
+  }
+  return computeFeatureImportance(shape, scatterX as number[], knots);
+};

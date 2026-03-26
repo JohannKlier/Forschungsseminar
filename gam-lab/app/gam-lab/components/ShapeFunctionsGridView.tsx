@@ -41,6 +41,12 @@ const minMax = (values: number[], fallbackMin: number, fallbackMax: number) => {
 };
 
 export default function ShapeFunctionsGridView({ shapes, baselineKnots, knotEdits, onSelectFeature }: Props) {
+  const interactionAbsMax = shapes.reduce((max, s) => {
+    if (!s.editableZ) return max;
+    const m = s.editableZ.flat().reduce((m2, v) => Math.max(m2, Math.abs(v)), 0);
+    return Math.max(max, m);
+  }, 1e-9);
+
   return (
     <div className={styles.gridView}>
       {shapes.map((shape, idx) => {
@@ -57,7 +63,7 @@ export default function ShapeFunctionsGridView({ shapes, baselineKnots, knotEdit
           return (
             <button key={shape.key} type="button" className={styles.gridCard} onClick={() => onSelectFeature(idx)}>
               <div className={styles.gridCardTitle}>{title}</div>
-              <InteractionHeatmap shape={shape} width={CHART_W} height={CHART_H + 30} />
+              <InteractionHeatmap shape={shape} width={CHART_W} height={CHART_H + 30} absMax={interactionAbsMax} />
             </button>
           );
         }

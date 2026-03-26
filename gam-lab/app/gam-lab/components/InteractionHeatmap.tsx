@@ -11,6 +11,8 @@ type Props = {
   width?: number;
   /** Defaults to 560, matching VisxShapeEditor / CategoricalShapePlot. Heights < 90 render as compact thumbnails. */
   height?: number;
+  /** Shared color scale maximum across multiple heatmaps. If omitted, computed per-shape. */
+  absMax?: number;
 };
 
 const HEIGHT = 560;
@@ -36,7 +38,7 @@ function bilinearZ(z: number[][], u: number, v: number): number {
   );
 }
 
-export const InteractionHeatmap = ({ shape, width: widthProp, height = HEIGHT }: Props) => {
+export const InteractionHeatmap = ({ shape, width: widthProp, height = HEIGHT, absMax: absMaxProp }: Props) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [measuredWidth, setMeasuredWidth] = useState(0);
@@ -79,7 +81,7 @@ export const InteractionHeatmap = ({ shape, width: widthProp, height = HEIGHT }:
       .attr("transform", `translate(${MARGIN.left},${MARGIN.top})`);
 
     const allZ = editableZ.flat();
-    const absMax = Math.max(1e-9, d3.max(allZ.map(Math.abs)) ?? 1e-9);
+    const absMax = absMaxProp ?? Math.max(1e-9, d3.max(allZ.map(Math.abs)) ?? 1e-9);
     COLOR.domain([-absMax, 0, absMax]);
 
     const xIsCat = !gridX?.length && !!xCategories?.length;

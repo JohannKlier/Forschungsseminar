@@ -2,6 +2,14 @@ export type KnotSet = { x: number[]; y: number[] };
 
 export type FeatureMode = "lock" | "deactivate";
 
+export type FeatureOperation = {
+  kind: "interaction";
+  operator: "product" | "sum" | "difference" | "ratio" | "absolute_difference";
+  sources: [string, string];
+  key?: string;
+  label?: string;
+};
+
 // Shape function knots for a single feature — no raw data attached.
 // When editableZ is present this is a 2-D interaction surface (read-only).
 export type ShapeFunction = {
@@ -35,6 +43,9 @@ export type ModelInfo = {
   dataset: string;
   model_type: "igann" | "igann_interactive";
   task: "regression" | "classification";
+  selected_features?: string[];
+  selected_interactions?: string[];
+  selected_operations?: FeatureOperation[];
   seed: number;
   n_estimators: number;
   boost_rate: number;

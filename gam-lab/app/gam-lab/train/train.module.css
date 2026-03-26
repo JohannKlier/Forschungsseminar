@@ -53,6 +53,36 @@
   margin-bottom: 1.1rem;
 }
 
+.stageHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  margin-bottom: 1.1rem;
+}
+
+.stagePill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.9rem;
+  height: 1.9rem;
+  padding: 0 0.75rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.stageSummary {
+  margin: 0.35rem 0 0;
+  color: #475569;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
 .collapseToggle {
   display: flex;
   align-items: center;
@@ -243,6 +273,174 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 0.65rem;
+}
+
+.featureSelectionCard {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+  padding: 0.95rem;
+  margin-bottom: 0.9rem;
+}
+
+.featureSelectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.9rem;
+}
+
+.featureSelectionSummary {
+  margin: 0.18rem 0 0;
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.featureSelectionActions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.selectionButton {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 0.55rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.selectionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.featureColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.featureColumn {
+  min-width: 0;
+}
+
+.featureColumnTitle {
+  margin: 0 0 0.55rem;
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.featureChecklist {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.interactionChecklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.45rem;
+}
+
+.interactionOptionRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.operatorSelect {
+  min-width: 0;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.65rem;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.operatorSelect:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.featureOption {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.65rem;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.emptyStateNote {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.trainActionRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+
+.actionHint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.88rem;
+}
+
+.finalStageCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.8rem;
+  background: #f8fafc;
+}
+
+.finalStageActions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.finalStageTitle {
+  margin: 0.45rem 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  .featureColumns {
+    grid-template-columns: 1fr;
+  }
+
+  .featureSelectionHeader,
+  .finalStageCard {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .interactionOptionRow {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Refit actions row: primary + secondary buttons side by side */

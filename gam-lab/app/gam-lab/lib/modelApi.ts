@@ -1,4 +1,4 @@
-import { TrainResponse } from "../types";
+import { FeatureOperation, TrainResponse } from "../types";
 
 const TRAINER_URL = process.env.NEXT_PUBLIC_TRAINER_URL ?? "http://localhost:4001";
 
@@ -73,6 +73,17 @@ const normalizeLegacyModelPayload = (payload: Record<string, unknown>): TrainRes
       dataset: typeof payload.dataset === "string" ? payload.dataset : "unknown",
       model_type: source,
       task,
+      selected_features: Object.keys(featureLabels),
+      selected_interactions: shapes.filter((shape) => shape.editableZ).map((shape) => shape.key),
+      selected_operations: shapes
+        .filter((shape) => shape.editableZ)
+        .map((shape) => ({
+          kind: "interaction" as const,
+          operator: "product" as const,
+          sources: (shape.key.split("__").slice(0, 2) as [string, string]),
+          key: shape.key,
+          label: shape.label,
+        })),
       seed: typeof payload.seed === "number" ? payload.seed : 3,
       n_estimators: typeof payload.n_estimators === "number" ? payload.n_estimators : 100,
       boost_rate: typeof payload.boost_rate === "number" ? payload.boost_rate : 0.1,
@@ -108,6 +119,9 @@ export type TrainRequest = {
   dataset: string;
   model_type: "igann" | "igann_interactive";
   center_shapes: boolean;
+  selected_features?: string[];
+  selected_interactions?: string[];
+  selected_operations?: FeatureOperation[];
   seed: number;
   points: number;
   n_estimators: number;

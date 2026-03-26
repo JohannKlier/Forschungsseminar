@@ -22,6 +22,12 @@ self.onmessage = (event: MessageEvent) => {
 
   const buildContribs = (knotsMap: Record<string, { x: number[]; y: number[] }>) =>
     version.shapes.map((shape: any) => {
+      // Interaction shapes are not editable; trainX holds precomputed per-row contributions.
+      if (shape.editableZ) {
+        return (trainX[shape.key] ?? []).map((v: any) =>
+          typeof v === "number" && Number.isFinite(v) ? v : 0
+        );
+      }
       const source = knotsMap[shape.key] ?? { x: shape.editableX ?? [], y: shape.editableY ?? [] };
       const scatterX: any[] = trainX[shape.key] ?? [];
       if (shape.categories && shape.categories.length) {

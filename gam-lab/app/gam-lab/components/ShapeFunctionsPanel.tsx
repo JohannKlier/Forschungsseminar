@@ -6,7 +6,7 @@ import VisxShapeEditor from "./VisxShapeEditor";
 import { InteractionHeatmap } from "./InteractionHeatmap";
 import { useShapeFunctionActions, type AlignSelectionMode } from "../hooks/useShapeFunctionActions";
 import ShapeFunctionsGridView from "./ShapeFunctionsGridView";
-import { computeFeatureImportance } from "../lib/importance";
+import { computeShapeImportance } from "../lib/importance";
 import TourLabel from "./TourLabel";
 import { type ToolSettings } from "../hooks/useToolSettings";
 
@@ -127,10 +127,9 @@ export default function ShapeFunctionsPanel({
   const featureImportance = useMemo(() => {
     const rawByKey: Record<string, number> = {};
     shapes.forEach((s) => {
-      if (s.editableZ) return; // skip 2-D interaction shapes
       const scatterX = trainData.trainX[s.key] ?? [];
       const shape = baselineKnots[s.key] ?? { x: s.editableX ?? [], y: s.editableY ?? [] };
-      rawByKey[s.key] = Math.max(0, computeFeatureImportance(s, scatterX, shape));
+      rawByKey[s.key] = Math.max(0, computeShapeImportance(s, scatterX, shape));
     });
     const total = Object.values(rawByKey).reduce((sum, value) => sum + value, 0);
     const normalizedByKey: Record<string, number> = {};
@@ -354,7 +353,7 @@ export default function ShapeFunctionsPanel({
                   <option key={sf.key} value={idx}>
                     {sf.editableZ ? "2D • " : sf.categories && sf.categories.length ? "Cat • " : "Cont • "}
                     {sf.label || sf.key || `x${idx + 1}`}
-                    {!sf.editableZ ? ` • I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}` : ""}
+                    {` • I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}`}
                   </option>
                 ))}
               </select>
