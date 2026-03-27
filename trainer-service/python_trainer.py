@@ -14,13 +14,13 @@ from sklearn.model_selection import train_test_split
 from adult_preprocessing import preprocess_adult_income
 from breast_preprocessing import preprocess_breast_cancer
 from bike_preprocessing import preprocess_bike_hourly
+from saved_model_store import get_saved_model_payload, list_saved_model_names, save_saved_model_payload
 import json
 import time
 from pathlib import Path
 
 
 MODELS_DIR = Path(__file__).parent / "models"
-SAVED_MODELS_DIR = Path(__file__).parent / "saved_models"
 
 
 class SaveModelRequest(BaseModel):
@@ -1245,37 +1245,36 @@ def get_model(name: str):
 @app.get("/saved-models")
 def list_saved_models():
     # User-edited models saved from the UI.
-    if not SAVED_MODELS_DIR.exists():
-        return {"models": []}
-    names = sorted([p.stem for p in SAVED_MODELS_DIR.glob("*.json") if p.is_file()])
-    return {"models": names}
+    try:
+        return {"models": list_saved_model_names()}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.get("/saved-models/{name}")
 def get_saved_model(name: str):
     # Resolve a single saved edit by name.
-    safe_name = Path(name).name
-    if not safe_name.endswith(".json"):
-        safe_name = f"{safe_name}.json"
-    path = SAVED_MODELS_DIR / safe_name
-    if not path.exists():
+    try:
+        payload = get_saved_model_payload(name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    if payload is None:
         raise HTTPException(status_code=404, detail="Model not found.")
-    with path.open("r", encoding="utf-8") as f:
-        return normalize_stored_model_payload(json.load(f))
+    return normalize_stored_model_payload(payload)
 
 
 @app.post("/saved-models")
 def save_model(request: SaveModelRequest):
-    # Persist edited model payloads on disk.
-    safe_name = Path(request.name).name
-    if not safe_name:
-        raise HTTPException(status_code=400, detail="Missing model name.")
-    if not safe_name.endswith(".json"):
-        safe_name = f"{safe_name}.json"
-    SAVED_MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    path = SAVED_MODELS_DIR / safe_name
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(request.payload, f, indent=2)
+    # Persist edited model payloads using the configured runtime store.
+    try:
+        safe_name = save_saved_model_payload(request.name, request.payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"saved": safe_name}
 
 

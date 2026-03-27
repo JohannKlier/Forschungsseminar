@@ -75,7 +75,7 @@ export default async function LogsPage({ searchParams }: PageProps) {
             <strong className={styles.summaryValue}>{result.records.length}</strong>
           </article>
           <article className={styles.summaryCard}>
-            <span className={styles.summaryLabel}>Audit files</span>
+            <span className={styles.summaryLabel}>Audit days</span>
             <strong className={styles.summaryValue}>{days.length}</strong>
           </article>
           <article className={styles.summaryCard}>

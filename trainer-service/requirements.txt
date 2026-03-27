@@ -8,3 +8,4 @@ scikit-learn
 dash
 dash-bootstrap-components
 i2dgraph
+psycopg[binary]

@@ -1,4 +1,4 @@
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { appendAuditRecords, createServerUserId, readAuditRecords, sanitizeUserId } from "../_lib";
 import { AUDIT_USER_COOKIE, type AuditQueuedEvent } from "../../../gam-lab/lib/audit";
@@ -46,7 +46,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const payload = (await request.json().catch(() => ({}))) as RequestBody;
   const cookieStore = await cookies();
-  const headerStore = await headers();
   const userId =
     sanitizeUserId(payload.userId) ??
     sanitizeUserId(cookieStore.get(AUDIT_USER_COOKIE)?.value) ??
@@ -75,8 +74,6 @@ export async function POST(request: Request) {
     detail: event.detail ?? null,
     request: {
       route: requestUrl.pathname,
-      referrer: headerStore.get("referer") ?? null,
-      userAgent: headerStore.get("user-agent") ?? null,
     },
   }));
 

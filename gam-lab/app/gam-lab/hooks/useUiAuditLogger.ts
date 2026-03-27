@@ -17,19 +17,37 @@ const describeElement = (element: HTMLElement) => {
     role: sanitizeAuditText(element.getAttribute("role"), 80),
     type: sanitizeAuditText(input.type, 40),
     ariaLabel: sanitizeAuditText(element.getAttribute("aria-label"), 120),
-    text: sanitizeAuditText(element.textContent, 120),
+    auditId: sanitizeAuditText(element.getAttribute("data-audit"), 80),
+    auditLabel: sanitizeAuditText(element.getAttribute("data-audit-label"), 120),
   };
 };
+
+const shouldCaptureValue = (element: HTMLElement) => element.getAttribute("data-audit-value") === "allow";
 
 const getChangeValue = (element: HTMLElement) => {
   if (element instanceof HTMLInputElement) {
     if (element.type === "checkbox" || element.type === "radio") {
       return { checked: element.checked };
     }
-    return { value: sanitizeAuditText(element.value, 200) };
+    if (shouldCaptureValue(element)) {
+      return { value: sanitizeAuditText(element.value, 200) };
+    }
+    return { valueCaptured: false };
   }
-  if (element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement) {
-    return { value: sanitizeAuditText(element.value, 200) };
+  if (element instanceof HTMLSelectElement) {
+    if (shouldCaptureValue(element)) {
+      return { value: sanitizeAuditText(element.value, 200) };
+    }
+    return {
+      valueCaptured: false,
+      selectedCount: Array.from(element.selectedOptions).length,
+    };
+  }
+  if (element instanceof HTMLTextAreaElement) {
+    if (shouldCaptureValue(element)) {
+      return { value: sanitizeAuditText(element.value, 200) };
+    }
+    return { valueCaptured: false };
   }
   return {};
 };

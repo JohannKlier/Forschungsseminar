@@ -15,6 +15,23 @@ npm run dev
 
 Then open `http://localhost:3000`.
 
+### Frontend environment
+
+For local development the audit log defaults to filesystem storage under `gam-lab/data/audit`.
+For deployment, switch the audit log to Postgres:
+
+```bash
+AUDIT_STORAGE=postgres
+DATABASE_URL=postgres://...
+# Set when your managed Postgres provider requires TLS.
+AUDIT_DATABASE_SSL=require
+TRAINER_URL=http://trainer-service:4001
+NEXT_PUBLIC_TRAINER_URL=http://trainer-service:4001
+```
+
+The audit schema is created automatically by the Next.js server on first use.
+Raw form values are no longer logged unless an element explicitly opts in with `data-audit-value="allow"`.
+
 ## Trainer service (trainer-service)
 
 You need the datasets before running the frontend or backend:
@@ -33,6 +50,24 @@ uvicorn python_trainer:app --reload --port 4001
 ```
 
 The API will be available at `http://localhost:4001` (or set `NEXT_PUBLIC_TRAINER_URL` / `TRAINER_URL` in `gam-lab` to match another port).
+
+Trainer saved models default to filesystem storage under `trainer-service/saved_models`.
+For deployment, switch them to Postgres:
+
+```bash
+SAVED_MODELS_STORAGE=postgres
+SAVED_MODELS_DATABASE_URL=postgres://...
+# Set when your managed Postgres provider requires TLS.
+SAVED_MODELS_DATABASE_SSL=require
+```
+
+The trainer creates the saved-model table automatically on first use.
+
+### Deployment notes
+
+- Treat `trainer-service/data` and `trainer-service/models` as build artifacts and bake them into the image.
+- Treat `trainer-service/saved_models` as local-development fallback storage only.
+- Prefer platform-managed logs from `stdout`/`stderr` over application log files.
 
 ## Notes
 
