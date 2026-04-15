@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
@@ -5,6 +7,8 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
+
+from trainer_service.preprocessing.common import sort_category_values
 
 
 ADULT_COLUMNS = [
@@ -41,20 +45,10 @@ def _load_adult(path: Path, skip_rows: int = 0) -> pd.DataFrame:
     return df
 
 
-def _sort_category_values(values):
-    def sort_key(value):
-        s = str(value)
-        try:
-            return (0, float(s), s)
-        except ValueError:
-            return (1, s.lower(), s)
-
-    return sorted([str(v) for v in values], key=sort_key)
-
-
 def preprocess_adult_income(seed: int):
     """Preprocess the UCI Adult income dataset."""
-    data_root = Path(__file__).parent / "data"
+    del seed
+    data_root = Path(__file__).resolve().parents[2] / "data"
     train_path = data_root / "adult.data"
     test_path = data_root / "adult.test"
     if not train_path.exists() or not test_path.exists():
@@ -64,8 +58,8 @@ def preprocess_adult_income(seed: int):
     test_df = _load_adult(test_path, skip_rows=1)
     df = pd.concat([train_df, test_df], axis=0, ignore_index=True)
 
-    y = df["income"].apply(lambda v: 1.0 if str(v).startswith(">") else 0.0)
-    X = df.drop(columns=["income"])
+    y = df["income"].apply(lambda value: 1.0 if str(value).startswith(">") else 0.0)
+    x_frame = df.drop(columns=["income"])
 
     cat_features = [
         "workclass",
@@ -77,7 +71,7 @@ def preprocess_adult_income(seed: int):
         "sex",
         "native-country",
     ]
-    num_features = [feature for feature in X.columns if feature not in cat_features]
+    num_features = [feature for feature in x_frame.columns if feature not in cat_features]
 
     num_transformer = Pipeline([("num_imputer", SimpleImputer(strategy="median"))])
     cat_transformer = Pipeline([("cat_imputer", SimpleImputer(strategy="most_frequent"))])
@@ -90,15 +84,15 @@ def preprocess_adult_income(seed: int):
         verbose_feature_names_out=False,
     ).set_output(transform="pandas")
 
-    X_proc = column_transformer.fit_transform(X)
-    cast_map = {col: "object" for col in cat_features if col in X_proc.columns}
+    x_processed = column_transformer.fit_transform(x_frame)
+    cast_map = {col: "object" for col in cat_features if col in x_processed.columns}
     if cast_map:
-        X_proc = X_proc.astype(cast_map)
+        x_processed = x_processed.astype(cast_map)
 
     cat_info = {
-        col: _sort_category_values(X_proc[col].dropna().unique().tolist())
+        col: sort_category_values(x_processed[col].dropna().unique().tolist())
         for col in cat_features
-        if col in X_proc.columns
+        if col in x_processed.columns
     }
-    labels = {col: col for col in X_proc.columns}
-    return X_proc, y.to_numpy(), cat_info, labels
+    labels = {col: col for col in x_processed.columns}
+    return x_processed, y.to_numpy(), cat_info, labels

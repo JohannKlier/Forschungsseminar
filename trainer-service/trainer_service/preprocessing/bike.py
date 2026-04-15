@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
@@ -6,23 +8,16 @@ from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 
-
-def _sort_category_values(values):
-    def sort_key(value):
-        s = str(value)
-        try:
-            return (0, float(s), s)
-        except ValueError:
-            return (1, s.lower(), s)
-
-    return sorted([str(v) for v in values], key=sort_key)
+from trainer_service.paths import DATA_DIR
+from trainer_service.preprocessing.common import sort_category_values
 
 
 def preprocess_bike_hourly(seed: int):
-    """Replicate preprocessing from test.ipynb for bike.csv."""
+    """Replicate preprocessing from the original trainer notebook."""
+    del seed
     bike_path = Path("/data/bike.csv")
     if not bike_path.exists():
-        bike_path = Path(__file__).parent / "data" / "bike.csv"
+        bike_path = DATA_DIR / "bike.csv"
     df = pd.read_csv(bike_path)
 
     def scale_values(values, new_min, new_max):
@@ -73,10 +68,10 @@ def preprocess_bike_hourly(seed: int):
         "Season",
     ]
 
-    X = df.drop(columns=feature_to_drop, errors="ignore")
+    x_frame = df.drop(columns=feature_to_drop, errors="ignore")
 
     cat_features = ["Weathersituation", "Time of Day", "Type of Day"]
-    num_features = [feature for feature in X.columns if feature not in cat_features]
+    num_features = [feature for feature in x_frame.columns if feature not in cat_features]
 
     num_transformer = Pipeline([("num_imputer", SimpleImputer(strategy="mean"))])
     cat_transformer = Pipeline([("cat_imputer", SimpleImputer(strategy="most_frequent"))])
@@ -89,16 +84,15 @@ def preprocess_bike_hourly(seed: int):
         verbose_feature_names_out=False,
     ).set_output(transform="pandas")
 
-    X_proc = column_transformer.fit_transform(X)
-    # Ensure categorical columns are objects
-    cast_map = {col: "object" for col in cat_features if col in X_proc.columns}
+    x_processed = column_transformer.fit_transform(x_frame)
+    cast_map = {col: "object" for col in cat_features if col in x_processed.columns}
     if cast_map:
-        X_proc = X_proc.astype(cast_map)
+        x_processed = x_processed.astype(cast_map)
 
     cat_info = {
-        col: _sort_category_values(X_proc[col].dropna().unique().tolist())
+        col: sort_category_values(x_processed[col].dropna().unique().tolist())
         for col in cat_features
-        if col in X_proc.columns
+        if col in x_processed.columns
     }
-    labels = {col: col for col in X_proc.columns}
-    return X_proc, y.to_numpy(), cat_info, labels
+    labels = {col: col for col in x_processed.columns}
+    return x_processed, y.to_numpy(), cat_info, labels

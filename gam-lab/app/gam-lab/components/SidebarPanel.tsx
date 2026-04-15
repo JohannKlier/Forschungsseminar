@@ -1,9 +1,12 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef } from "react";
 import styles from "../page.module.css";
-import { HistoryEntry, KnotSet, ShapeFunction, SidebarTab, StatItem, TrainData } from "../types";
+import { HistoryEntry, KnotSet, MetricWarning, ShapeFunction, SidebarTab, TrainData } from "../types";
 import TourLabel from "./TourLabel";
 import FeatureMiniHistogram from "./FeatureMiniHistogram";
 import { InteractionHeatmap } from "./InteractionHeatmap";
+
+const formatMetricChange = (value: number, digits = 3) => `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
+const formatMetricPercent = (value: number | null) => (value == null ? null : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`);
 
 function HistoryPanel({
   history,
@@ -284,7 +287,7 @@ type Props = {
   showTourLabels?: boolean;
   sidebarTab: SidebarTab;
   setSidebarTab: Dispatch<SetStateAction<SidebarTab>>;
-  stats: StatItem[] | null;
+  metricWarning: MetricWarning | null;
   history: HistoryEntry[];
   formatHistoryAction: (action: string) => string;
   formatHistoryDetail: (entryIndex: number) => string | null;
@@ -301,7 +304,7 @@ export default function SidebarPanel({
   showTourLabels = false,
   sidebarTab,
   setSidebarTab,
-  stats,
+  metricWarning,
   history,
   formatHistoryAction,
   formatHistoryDetail,
@@ -325,7 +328,7 @@ export default function SidebarPanel({
             title="Switch the sidebar mode"
             description="The sidebar has one mode for live feedback and another for reviewing edits."
             details={[
-              "Edit shows the stats summary for the current model state.",
+              "Edit shows warnings when the latest action hurts the live fit.",
               "History lists recorded edit actions and lets you prune them.",
               "Features shows the raw feature distributions from the dataset.",
             ]}
@@ -360,97 +363,46 @@ export default function SidebarPanel({
             <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
               {showTourLabels ? (
                 <TourLabel
-                  label="Statistics"
-                  title="Read model quality at a glance"
-                  description="These bars compare the original model with the latest trained or refit version."
+                  label="Warnings"
+                  title="Watch for harmful edits"
+                  description="The sidebar warns only when the latest applied action meaningfully worsens the live fit."
                   details={[
-                    "Initial comes from the very first training run.",
-                    "Latest comes from the most recent train or refit result.",
+                    "Warnings compare the current edit state against the state just before the latest action.",
+                    "If no warning is shown, the latest action stayed within the guardrail.",
                   ]}
                   placement="top-left"
                 />
               ) : null}
-            <p className={styles.settingsLabel}>Stats</p>
-            <div className={styles.statsLegend}>
-              <span className={styles.statsLegendItem}>
-                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchInitial}`} />
-                Initial
-              </span>
-              <span className={styles.statsLegendItem}>
-                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchLast}`} />
-                Last
-              </span>
-              <span className={styles.statsLegendItem}>
-                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchLatest}`} />
-                Latest
-              </span>
-              <span className={styles.statsLegendItem}>
-                <span className={`${styles.statsLegendSwatch} ${styles.statsLegendSwatchCurrent}`} />
-                Current
-              </span>
-            </div>
-            {stats?.map((stat) => {
-            if (stat.kind === "value") {
-              return (
-                <div key={stat.label} className={styles.settingsItem}>
-                  <span className={styles.settingsHint}>{stat.label}</span>
-                  <span className={styles.settingsValue}>{stat.value}</span>
+              <p className={styles.settingsLabel}>Warnings</p>
+              {metricWarning ? (
+                <div className={styles.warningCard} role="alert" aria-live="polite">
+                  <div className={styles.warningHeader}>
+                    <span className={styles.warningBadge}>Warning</span>
+                    <span className={styles.warningAction}>{formatHistoryAction(metricWarning.action)}</span>
+                  </div>
+                  <p className={styles.warningText}>
+                    The latest applied action pushed the live fit past the warning margin.
+                  </p>
+                  <div className={styles.warningMetrics}>
+                    {metricWarning.details.map((detail) => (
+                      <div key={detail.label} className={styles.warningMetricRow}>
+                        <span className={styles.warningMetricLabel}>{detail.label}</span>
+                        <span className={styles.warningMetricDelta}>
+                          {formatMetricChange(detail.delta)}
+                          {detail.deltaPct != null ? ` (${formatMetricPercent(detail.deltaPct)})` : ""}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              );
-            }
-            const { initial, last, latest, current } = stat;
-            const format = stat.format ?? "0.000";
-            const digits = format.includes("0.00") ? 2 : 3;
-            const fmt = (v: number | null) => (Number.isFinite(v) ? (v as number).toFixed(digits) : "—");
-            const maxVal = Math.max(Math.abs(initial ?? 0), Math.abs(last ?? 0), Math.abs(latest ?? 0), Math.abs(current ?? 0), 1e-6);
-            const pct = (v: number | null) =>
-              Number.isFinite(v) ? `${(Math.abs(v as number) / maxVal) * 100}%` : "0%";
-            return (
-              <div key={stat.label} className={styles.statsBarRow}>
-                <div className={styles.statsBarHeader}>
-                  <span className={styles.settingsHint}>{stat.label}</span>
+              ) : (
+                <div className={styles.warningIdleCard}>
+                  <p className={styles.warningIdleTitle}>No warning</p>
+                  <p className={styles.settingsHint}>
+                    Warnings appear here only when the latest applied action degrades the live metrics beyond the guardrail.
+                  </p>
                 </div>
-                <div className={styles.statsMetricRows}>
-                  {initial !== null ? (
-                    <div className={styles.statsMetricRow}>
-                      <div className={styles.statsBar}>
-                        <div className={`${styles.statsBarValue} ${styles.statsBarValueInitial}`} style={{ width: pct(initial) }}>
-                          <span className={styles.statsBarNumber}>{fmt(initial)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {last !== null ? (
-                    <div className={styles.statsMetricRow}>
-                      <div className={styles.statsBar}>
-                        <div className={`${styles.statsBarValue} ${styles.statsBarValueLast}`} style={{ width: pct(last) }}>
-                          <span className={styles.statsBarNumber}>{fmt(last)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {latest !== null ? (
-                    <div className={styles.statsMetricRow}>
-                      <div className={styles.statsBar}>
-                        <div className={`${styles.statsBarValue} ${styles.statsBarValueLatest}`} style={{ width: pct(latest) }}>
-                          <span className={styles.statsBarNumber}>{fmt(latest)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                  {current !== null ? (
-                    <div className={styles.statsMetricRow}>
-                      <div className={styles.statsBar}>
-                        <div className={`${styles.statsBarValue} ${styles.statsBarValueCurrent}`} style={{ width: pct(current) }}>
-                          <span className={styles.statsBarNumber}>{fmt(current)}</span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            );
-            })}
+              )}
             </div>
           </div>
         </>

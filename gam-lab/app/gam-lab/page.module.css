@@ -1881,6 +1881,103 @@
   padding-top: 0;
 }
 
+.warningCard,
+.warningIdleCard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem 0.9rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(20, 33, 61, 0.12);
+}
+
+.warningCard {
+  background: linear-gradient(180deg, rgba(242, 95, 76, 0.14), rgba(255, 255, 255, 0.92));
+  border-color: rgba(242, 95, 76, 0.32);
+}
+
+.warningIdleCard {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.warningHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.warningBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.45rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(242, 95, 76, 0.18);
+  color: #b42318;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.warningAction {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--ink);
+  text-align: right;
+}
+
+.warningText {
+  margin: 0;
+  color: rgba(20, 33, 61, 0.86);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.warningMetrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.warningMetricRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgba(20, 33, 61, 0.08);
+}
+
+.warningMetricRow:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.warningMetricLabel {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.warningMetricDelta {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #b42318;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.warningIdleTitle {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 @media (max-width: 1100px) {
   .pageFrame {
     height: auto;
@@ -3013,4 +3110,3 @@
   flex-direction: column;
   gap: 0.75rem;
 }
-

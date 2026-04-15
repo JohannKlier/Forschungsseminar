@@ -1,42 +1,46 @@
 import { interpolateFeature } from "../lib/interpolate";
+import type { KnotSet, ModelInfo, ShapeFunction, ShapeFunctionVersion, TrainData } from "../types";
 
 export {};
 
+type WorkerPayload = {
+  version: ShapeFunctionVersion | null;
+  trainData: TrainData | null;
+  modelInfo: ModelInfo | null;
+  baselineKnots: Record<string, KnotSet>;
+  knotEdits: Record<string, KnotSet>;
+  comparisonKnotEdits?: Record<string, KnotSet> | null;
+};
+
 self.onmessage = (event: MessageEvent) => {
-  const { version, trainData, modelInfo, baselineKnots, knotEdits } = event.data as {
-    version: any;
-    trainData: any;
-    modelInfo: any;
-    baselineKnots: Record<string, { x: number[]; y: number[] }>;
-    knotEdits: Record<string, { x: number[]; y: number[] }>;
-  };
+  const { version, trainData, modelInfo, baselineKnots, knotEdits, comparisonKnotEdits } = event.data as WorkerPayload;
   if (!version || !trainData) {
     self.postMessage(null);
     return;
   }
 
   const trainY: number[] = trainData.trainY ?? [];
-  const trainX: Record<string, number[]> = trainData.trainX ?? {};
+  const trainX = trainData.trainX as Record<string, Array<number | string>>;
 
   const n = trainY.length || 1;
 
-  const buildContribs = (knotsMap: Record<string, { x: number[]; y: number[] }>) =>
-    version.shapes.map((shape: any) => {
+  const buildContribs = (knotsMap: Record<string, KnotSet>) =>
+    version.shapes.map((shape: ShapeFunction) => {
       // Interaction shapes are not editable; trainX holds precomputed per-row contributions.
       if (shape.editableZ) {
-        return (trainX[shape.key] ?? []).map((v: any) =>
+        return (trainX[shape.key] ?? []).map((v) =>
           typeof v === "number" && Number.isFinite(v) ? v : 0
         );
       }
       const source = knotsMap[shape.key] ?? { x: shape.editableX ?? [], y: shape.editableY ?? [] };
-      const scatterX: any[] = trainX[shape.key] ?? [];
+      const scatterX = trainX[shape.key] ?? [];
       if (shape.categories && shape.categories.length) {
         const mapping = new Map<number, number>();
         shape.categories.forEach((_cat: string, idx: number) => {
           const yVal = source.y[idx] ?? 0;
           mapping.set(idx, yVal);
         });
-        return scatterX.map((raw: any) => {
+        return scatterX.map((raw) => {
           const idx = shape.categories?.indexOf(String(raw)) ?? -1;
           return mapping.get(idx) ?? 0;
         });
@@ -72,7 +76,15 @@ self.onmessage = (event: MessageEvent) => {
   const editedContribs = buildContribs(editedKnotsMap);
   const editedTotals = sumTotals(editedContribs);
   const editedModel = buildModel(editedContribs, editedTotals);
+  const comparisonModel = comparisonKnotEdits
+    ? (() => {
+        const comparisonKnotsMap = { ...baselineKnots, ...comparisonKnotEdits };
+        const comparisonContribs = buildContribs(comparisonKnotsMap);
+        const comparisonTotals = sumTotals(comparisonContribs);
+        return buildModel(comparisonContribs, comparisonTotals);
+      })()
+    : null;
   const residuals = trainY.map((yVal: number, idx: number) => yVal - editedModel.preds[idx]);
 
-  self.postMessage({ baseModel, editedModel, residuals });
+  self.postMessage({ baseModel, editedModel, comparisonModel, residuals });
 };

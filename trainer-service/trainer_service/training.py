@@ -1,76 +1,20 @@
-"""Lightweight Python trainer service for the bike_hourly dataset."""
+from __future__ import annotations
 
+import time
 from typing import Dict, List, Set
-from collections.abc import Mapping, Sequence
-import inspect
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from fastapi import HTTPException
+from igann import IGANN, IGANN_interactive
 import numpy as np
 import pandas as pd
-from igann import IGANN, IGANN_interactive
 from sklearn.model_selection import train_test_split
 
-from adult_preprocessing import preprocess_adult_income
-from breast_preprocessing import preprocess_breast_cancer
-from bike_preprocessing import preprocess_bike_hourly
-from saved_model_store import get_saved_model_payload, list_saved_model_names, save_saved_model_payload
-import json
-import time
-from pathlib import Path
-
-
-MODELS_DIR = Path(__file__).parent / "models"
-
-
-class SaveModelRequest(BaseModel):
-    name: str
-    payload: Dict
-
-# FastAPI app setup with permissive CORS so the frontend can call it directly.
-app = FastAPI()
-
-
-class TrainRequest(BaseModel):
-    dataset: str
-    model_type: str = "igann"
-    center_shapes: bool = False
-    selected_features: List[str] = []
-    selected_interactions: List[str] | None = None
-    selected_operations: List[Dict] = []
-    seed: int = 3
-    points: int | None = 250
-    n_estimators: int = 100
-    boost_rate: float = 0.1
-    init_reg: float = 1
-    elm_alpha: float = 1
-    early_stopping: int = 50
-    scale_y: bool = True
-
-
-class RefitRequest(TrainRequest):
-    partials: List[Dict]
-    locked_features: List[str] = []
-    feature_modes: Dict[str, str] = {}
-
-
-def _to_jsonable(obj):
-    """Recursively convert numpy/pandas objects to plain Python types for FastAPI responses."""
-    if obj is None:
-        return None
-    if isinstance(obj, (float, int, str, bool)):
-        return obj
-    if isinstance(obj, np.generic):
-        return obj.item()
-    if isinstance(obj, np.ndarray):
-        return [_to_jsonable(v) for v in obj.tolist()]
-    if isinstance(obj, pd.Series):
-        return [_to_jsonable(v) for v in obj.tolist()]
-    if isinstance(obj, Mapping):
-        return {k: _to_jsonable(v) for k, v in obj.items()}
-    if isinstance(obj, Sequence) and not isinstance(obj, (str, bytes, bytearray)):
-        return [_to_jsonable(v) for v in obj]
-    return obj
+from trainer_service.preprocessing import (
+    preprocess_adult_income,
+    preprocess_bike_hourly,
+    preprocess_breast_cancer,
+)
+from trainer_service.schemas import TrainRequest
 
 
 def interpolate_numeric(values: List[float], xs: List[float], ys: List[float]) -> List[float]:
@@ -79,21 +23,20 @@ def interpolate_numeric(values: List[float], xs: List[float], ys: List[float]) -
         return [0.0 for _ in values]
     if len(xs) == 0 or len(ys) == 0 or len(xs) != len(ys):
         return [0.0 for _ in values]
-    pairs = sorted(zip(list(xs), list(ys)), key=lambda p: p[0])
-    sx, sy = zip(*pairs)
+    pairs = sorted(zip(list(xs), list(ys)), key=lambda pair: pair[0])
+    sorted_xs, sorted_ys = zip(*pairs)
     result: List[float] = []
-    for v in values:
-        if v <= sx[0]:
-            result.append(sy[0])
+    for value in values:
+        if value <= sorted_xs[0]:
+            result.append(sorted_ys[0])
             continue
-        if v >= sx[-1]:
-            result.append(sy[-1])
+        if value >= sorted_xs[-1]:
+            result.append(sorted_ys[-1])
             continue
-        # find interval
-        hi = next(i for i, x in enumerate(sx) if x >= v)
+        hi = next(i for i, candidate in enumerate(sorted_xs) if candidate >= value)
         lo = hi - 1
-        t = (v - sx[lo]) / max(1e-9, sx[hi] - sx[lo])
-        result.append(sy[lo] * (1 - t) + sy[hi] * t)
+        ratio = (value - sorted_xs[lo]) / max(1e-9, sorted_xs[hi] - sorted_xs[lo])
+        result.append(sorted_ys[lo] * (1 - ratio) + sorted_ys[hi] * ratio)
     return result
 
 
@@ -101,7 +44,7 @@ def _coerce_numeric_points(values) -> List[float]:
     """Normalize shape point containers without relying on ambiguous array truthiness."""
     if values is None:
         return []
-    return [float(v) for v in values]
+    return [float(value) for value in values]
 
 
 def evaluate_contribs(
@@ -115,27 +58,28 @@ def evaluate_contribs(
     if shape_fn.get("datatype") == "categorical":
         cats = shape_fn.get("x", [])
         vals = shape_fn.get("y", [])
-        mapping = {c: vals[i] if i < len(vals) else 0.0 for i, c in enumerate(cats)}
+        mapping = {category: vals[i] if i < len(vals) else 0.0 for i, category in enumerate(cats)}
         contribs: List[float] = []
-        for v in feat_values:
-            if isinstance(v, str):
-                cname = v
+        for value in feat_values:
+            if isinstance(value, str):
+                category_name = value
             else:
-                idx = int(round(v))
-                cname = categories[idx] if categories and idx < len(categories) else None
-            contribs.append(mapping.get(cname, 0.0))
+                index = int(round(value))
+                category_name = categories[index] if categories and index < len(categories) else None
+            contribs.append(mapping.get(category_name, 0.0))
         return contribs
-    # numeric
     xs = shape_fn.get("x", [])
     ys = shape_fn.get("y", [])
     return interpolate_numeric(feat_values, xs, ys)
 
 
-def normalize_numeric_shape_points(shape_functions: Dict, feature_keys: List[str], cat_info: Dict, num_points: int) -> Dict:
-    """
-    Ensure numeric shape functions use exactly ``num_points`` knots for stable frontend behavior.
-    Categorical shape functions are kept unchanged.
-    """
+def normalize_numeric_shape_points(
+    shape_functions: Dict,
+    feature_keys: List[str],
+    cat_info: Dict,
+    num_points: int,
+) -> Dict:
+    """Ensure numeric shape functions use exactly ``num_points`` knots."""
     normalized: Dict = {}
     for key in feature_keys:
         shape_fn = shape_functions.get(key, {})
@@ -153,9 +97,9 @@ def normalize_numeric_shape_points(shape_functions: Dict, feature_keys: List[str
             normalized[key] = shape_fn
             continue
 
-        pairs = sorted(zip(xs_raw[:pair_count], ys_raw[:pair_count]), key=lambda p: p[0])
-        xs_sorted = [p[0] for p in pairs]
-        ys_sorted = [p[1] for p in pairs]
+        pairs = sorted(zip(xs_raw[:pair_count], ys_raw[:pair_count]), key=lambda pair: pair[0])
+        xs_sorted = [pair[0] for pair in pairs]
+        ys_sorted = [pair[1] for pair in pairs]
         min_x, max_x = xs_sorted[0], xs_sorted[-1]
 
         if num_points <= 1:
@@ -173,13 +117,13 @@ def normalize_numeric_shape_points(shape_functions: Dict, feature_keys: List[str
     return normalized
 
 
-def _get_numeric_col(key: str, X_df, cat_info: Dict) -> np.ndarray:
+def _get_numeric_col(key: str, x_frame, cat_info: Dict) -> np.ndarray:
     """Return numerical values for a feature column, label-encoding categoricals."""
     if key in cat_info:
-        cats = cat_info[key]
-        cat_to_idx = {str(c): float(i) for i, c in enumerate(cats)}
-        return np.array([cat_to_idx.get(str(v), 0.0) for v in X_df[key]], dtype=float)
-    return X_df[key].values.astype(float)
+        categories = cat_info[key]
+        cat_to_idx = {str(category): float(i) for i, category in enumerate(categories)}
+        return np.array([cat_to_idx.get(str(value), 0.0) for value in x_frame[key]], dtype=float)
+    return x_frame[key].values.astype(float)
 
 
 def _operation_symbol(operator: str) -> str:
@@ -213,8 +157,8 @@ def _operation_scalar_values(left_vals: np.ndarray, right_vals: np.ndarray, oper
     if operator == "difference":
         return left_vals - right_vals
     if operator == "ratio":
-        safe_den = np.where(np.abs(right_vals) < 1e-9, 1e-9, right_vals)
-        return left_vals / safe_den
+        safe_denominator = np.where(np.abs(right_vals) < 1e-9, 1e-9, right_vals)
+        return left_vals / safe_denominator
     if operator == "absolute_difference":
         return np.abs(left_vals - right_vals)
     raise HTTPException(status_code=400, detail=f"Unsupported operation operator: {operator}")
@@ -251,8 +195,9 @@ def _normalize_operation_specs(
             specs.append({"kind": kind, "operator": operator, "sources": [left, right], "key": key, "label": label})
         return specs
 
-    from itertools import combinations as _combinations
-    available_pairs = [(k1, k2) for k1, k2 in _combinations(feature_keys, 2)]
+    from itertools import combinations as combinations
+
+    available_pairs = [(k1, k2) for k1, k2 in combinations(feature_keys, 2)]
     available_pair_keys = {f"{k1}__{k2}" for k1, k2 in available_pairs}
     if requested_interactions is None:
         requested_set = available_pair_keys
@@ -277,49 +222,40 @@ def _normalize_operation_specs(
     ]
 
 
-def _build_dummy_interaction_cols(k1: str, k2: str, X_df, cat_info: Dict) -> List[tuple]:
+def _build_dummy_interaction_cols(k1: str, k2: str, x_frame, cat_info: Dict) -> List[tuple]:
     """
     Create interaction feature columns using dummy encoding for categorical features.
-    Returns list of (column_name, values) tuples.
-    - num × num: single product column keyed by the display key
-    - cat × num: one indicator×numeric column per level of the categorical feature
-    - num × cat: one indicator×numeric column per level of the categorical feature
-    - cat × cat: one indicator-pair column per (level1, level2) combination
 
-    Internal column names use '___c{i}' / '___r{j}' / '___c{i}r{j}' suffixes so they
-    are clearly distinct from the display key (which uses a single '__' separator).
+    Internal column names use explicit suffixes so they stay distinct from the display key.
     """
     is_cat1 = k1 in cat_info
     is_cat2 = k2 in cat_info
     display_key = f"{k1}__{k2}"
 
     if not is_cat1 and not is_cat2:
-        vals = X_df[k1].values.astype(float) * X_df[k2].values.astype(float)
+        vals = x_frame[k1].values.astype(float) * x_frame[k2].values.astype(float)
         return [(display_key, vals)]
 
     if is_cat1 and not is_cat2:
-        num_vals = X_df[k2].values.astype(float)
+        num_vals = x_frame[k2].values.astype(float)
         return [
-            (f"{display_key}___c{i}", (X_df[k1].astype(str) == str(level)).values.astype(float) * num_vals)
+            (f"{display_key}___c{i}", (x_frame[k1].astype(str) == str(level)).values.astype(float) * num_vals)
             for i, level in enumerate(cat_info[k1])
         ]
 
     if not is_cat1 and is_cat2:
-        num_vals = X_df[k1].values.astype(float)
+        num_vals = x_frame[k1].values.astype(float)
         return [
-            (f"{display_key}___r{j}", (X_df[k2].astype(str) == str(level)).values.astype(float) * num_vals)
+            (f"{display_key}___r{j}", (x_frame[k2].astype(str) == str(level)).values.astype(float) * num_vals)
             for j, level in enumerate(cat_info[k2])
         ]
 
-    # cat × cat: single label-encoded product (avoids C₁×C₂ column explosion).
-    # Both categoricals are encoded as integer indices, so the product is a composite integer
-    # that IGANN can still learn a shape on, similar to the original approach.
-    v1 = _get_numeric_col(k1, X_df, cat_info)
-    v2 = _get_numeric_col(k2, X_df, cat_info)
+    v1 = _get_numeric_col(k1, x_frame, cat_info)
+    v2 = _get_numeric_col(k2, x_frame, cat_info)
     return [(display_key, v1 * v2)]
 
 
-def _build_operation_cols(operation_spec: Dict, X_df, cat_info: Dict) -> List[tuple]:
+def _build_operation_cols(operation_spec: Dict, x_frame, cat_info: Dict) -> List[tuple]:
     left, right = operation_spec["sources"]
     operator = operation_spec["operator"]
     key = operation_spec["key"]
@@ -327,7 +263,7 @@ def _build_operation_cols(operation_spec: Dict, X_df, cat_info: Dict) -> List[tu
     is_cat_right = right in cat_info
 
     if operator == "product":
-        raw_cols = _build_dummy_interaction_cols(left, right, X_df, cat_info)
+        raw_cols = _build_dummy_interaction_cols(left, right, x_frame, cat_info)
         if len(raw_cols) == 1 and raw_cols[0][0] == f"{left}__{right}":
             return [(key, raw_cols[0][1])]
         renamed_cols = []
@@ -343,27 +279,23 @@ def _build_operation_cols(operation_spec: Dict, X_df, cat_info: Dict) -> List[tu
             detail=f"Operator '{operator}' currently supports numerical-numerical feature pairs only.",
         )
 
-    left_vals = X_df[left].values.astype(float)
-    right_vals = X_df[right].values.astype(float)
+    left_vals = x_frame[left].values.astype(float)
+    right_vals = x_frame[right].values.astype(float)
     return [(key, _operation_scalar_values(left_vals, right_vals, operator))]
 
 
 def _build_2d_grid_from_dummies(
-    k1: str, k2: str,
+    k1: str,
+    k2: str,
     dummy_cols: List[str],
     dummy_shapes: Dict[str, Dict],
-    X_train_df,
+    x_train,
     cat_info: Dict,
     label_map: Dict,
     n_grid: int = 15,
 ) -> Dict:
     """
     Build a 2D grid shape dict for an interaction pair from per-dummy shape functions.
-    - num × num: delegates to _build_2d_grid (single product shape, unchanged)
-    - cat × num: z[row=num_j][col=cat_i] = g_i(num_j)
-    - num × cat: z[row=cat_j][col=num_i] = g_j(num_i)
-    - cat × cat: z[row=cat2_j][col=cat1_i] = g_{i,j}(1)
-    z convention matches _build_2d_grid: z[row=y-axis][col=x-axis].
     """
     is_cat1 = k1 in cat_info
     is_cat2 = k2 in cat_info
@@ -383,94 +315,89 @@ def _build_2d_grid_from_dummies(
             return float(np.interp(x_val, sx, sy))
         return float(sy[0]) if len(sy) == 1 else 0.0
 
-    if not is_cat1 and not is_cat2 or (is_cat1 and is_cat2):
-        # num × num or cat × cat: single product/label-encoded column, reuse existing logic
-        return _build_2d_grid(k1, k2, dummy_shapes.get(display_key, {}), X_train_df, cat_info, label_map, n_grid)
+    if (not is_cat1 and not is_cat2) or (is_cat1 and is_cat2):
+        return _build_2d_grid(k1, k2, dummy_shapes.get(display_key, {}), x_train, cat_info, label_map, n_grid)
 
     if is_cat1 and not is_cat2:
-        # dummy_cols[i] is the shape for cat1[i] × num2
         categories1 = cat_info[k1]
-        x2_grid = np.linspace(float(X_train_df[k2].min()), float(X_train_df[k2].max()), n_grid)
+        x2_grid = np.linspace(float(x_train[k2].min()), float(x_train[k2].max()), n_grid)
         z = [[_interp(dummy_shapes.get(col, {}), num_val) for col in dummy_cols] for num_val in x2_grid]
-        return {**base, "editableZ": z, "xCategories": [str(c) for c in categories1], "gridX2": x2_grid.tolist()}
+        return {**base, "editableZ": z, "xCategories": [str(category) for category in categories1], "gridX2": x2_grid.tolist()}
 
     if not is_cat1 and is_cat2:
-        # dummy_cols[j] is the shape for num1 × cat2[j]
         categories2 = cat_info[k2]
-        x1_grid = np.linspace(float(X_train_df[k1].min()), float(X_train_df[k1].max()), n_grid)
+        x1_grid = np.linspace(float(x_train[k1].min()), float(x_train[k1].max()), n_grid)
         z = [[_interp(dummy_shapes.get(col, {}), num_val) for num_val in x1_grid] for col in dummy_cols]
-        return {**base, "editableZ": z, "gridX": x1_grid.tolist(), "yCategories": [str(c) for c in categories2]}
+        return {**base, "editableZ": z, "gridX": x1_grid.tolist(), "yCategories": [str(category) for category in categories2]}
 
-    # cat × cat: dummy_cols ordered as (i=0,j=0),(i=0,j=1),...,(i=n1-1,j=n2-1)
-    # z[row=cat2_j][col=cat1_i] = g_{i,j}(1)
     categories1, categories2 = cat_info[k1], cat_info[k2]
     n1, n2 = len(categories1), len(categories2)
     z_vals = {(idx // n2, idx % n2): _interp(dummy_shapes.get(col, {}), 1.0) for idx, col in enumerate(dummy_cols)}
     z = [[z_vals.get((i, j), 0.0) for i in range(n1)] for j in range(n2)]
-    return {**base, "editableZ": z, "xCategories": [str(c) for c in categories1], "yCategories": [str(c) for c in categories2]}
+    return {
+        **base,
+        "editableZ": z,
+        "xCategories": [str(category) for category in categories1],
+        "yCategories": [str(category) for category in categories2],
+    }
 
 
-def _build_2d_grid(k1: str, k2: str, shape_1d: Dict, X_train_df, cat_info: Dict, label_map: Dict, n_grid: int = 15) -> Dict:
-    """Convert a 1D interaction shape function (f(feat1*feat2)) into a 2D grid shape dict."""
+def _build_2d_grid(k1: str, k2: str, shape_1d: Dict, x_train, cat_info: Dict, label_map: Dict, n_grid: int = 15) -> Dict:
+    """Convert a 1D interaction shape function into a 2D grid shape dict."""
     sx = _coerce_numeric_points(shape_1d.get("x"))
     sy = _coerce_numeric_points(shape_1d.get("y"))
 
     is_cat1, is_cat2 = k1 in cat_info, k2 in cat_info
 
-    # x-axis (feat1)
     if is_cat1:
-        x1_enc = np.arange(len(cat_info[k1]), dtype=float)
+        x1_encoded = np.arange(len(cat_info[k1]), dtype=float)
     else:
-        x1_enc = np.linspace(float(X_train_df[k1].min()), float(X_train_df[k1].max()), n_grid)
+        x1_encoded = np.linspace(float(x_train[k1].min()), float(x_train[k1].max()), n_grid)
 
-    # y-axis (feat2)
     if is_cat2:
-        x2_enc = np.arange(len(cat_info[k2]), dtype=float)
+        x2_encoded = np.arange(len(cat_info[k2]), dtype=float)
     else:
-        x2_enc = np.linspace(float(X_train_df[k2].min()), float(X_train_df[k2].max()), n_grid)
+        x2_encoded = np.linspace(float(x_train[k2].min()), float(x_train[k2].max()), n_grid)
 
-    # z[row=y][col=x] = f(x1[col] * x2[row])
     z = []
-    for x2 in x2_enc:
+    for x2 in x2_encoded:
         row = []
-        for x1 in x1_enc:
-            t = float(x1 * x2)
+        for x1 in x1_encoded:
+            term = float(x1 * x2)
             if len(sx) > 1:
-                val = float(np.interp(t, sx, sy))
+                value = float(np.interp(term, sx, sy))
             elif len(sy) == 1:
-                val = float(sy[0])
+                value = float(sy[0])
             else:
-                val = 0.0
-            row.append(val)
+                value = 0.0
+            row.append(value)
         z.append(row)
 
     result: Dict = {
         "key": f"{k1}__{k2}",
         "label": f"{label_map.get(k1, k1)} × {label_map.get(k2, k2)}",
         "label2": label_map.get(k2, k2),
-        # 1-D product shape — used by the frontend worker to evaluate contributions
         "editableX": sx,
         "editableY": sy,
-        # 2-D display grid
         "editableZ": z,
     }
     if is_cat1:
-        result["xCategories"] = [str(c) for c in cat_info[k1]]
+        result["xCategories"] = [str(category) for category in cat_info[k1]]
     else:
-        result["gridX"] = x1_enc.tolist()
+        result["gridX"] = x1_encoded.tolist()
     if is_cat2:
-        result["yCategories"] = [str(c) for c in cat_info[k2]]
+        result["yCategories"] = [str(category) for category in cat_info[k2]]
     else:
-        result["gridX2"] = x2_enc.tolist()
+        result["gridX2"] = x2_encoded.tolist()
 
     return result
 
 
-def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, X_train_df, cat_info: Dict, n_grid: int = 15) -> Dict:
+def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, x_train, cat_info: Dict, n_grid: int = 15) -> Dict:
     left, right = operation_spec["sources"]
     operator = operation_spec["operator"]
     if operator == "product":
-        result = _build_2d_grid(left, right, shape_1d, X_train_df, cat_info, {}, n_grid)
+        result = _build_2d_grid(left, right, shape_1d, x_train, cat_info, {}, n_grid)
         result["key"] = operation_spec["key"]
         result["label"] = operation_spec["label"]
         return result
@@ -483,21 +410,21 @@ def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, X_train_d
 
     sx = _coerce_numeric_points(shape_1d.get("x"))
     sy = _coerce_numeric_points(shape_1d.get("y"))
-    x1_enc = np.linspace(float(X_train_df[left].min()), float(X_train_df[left].max()), n_grid)
-    x2_enc = np.linspace(float(X_train_df[right].min()), float(X_train_df[right].max()), n_grid)
+    x1_encoded = np.linspace(float(x_train[left].min()), float(x_train[left].max()), n_grid)
+    x2_encoded = np.linspace(float(x_train[right].min()), float(x_train[right].max()), n_grid)
 
     z = []
-    for x2 in x2_enc:
+    for x2 in x2_encoded:
         row = []
-        for x1 in x1_enc:
-            t = float(_operation_scalar_values(np.array([x1]), np.array([x2]), operator)[0])
+        for x1 in x1_encoded:
+            term = float(_operation_scalar_values(np.array([x1]), np.array([x2]), operator)[0])
             if len(sx) > 1:
-                val = float(np.interp(t, sx, sy))
+                value = float(np.interp(term, sx, sy))
             elif len(sy) == 1:
-                val = float(sy[0])
+                value = float(sy[0])
             else:
-                val = 0.0
-            row.append(val)
+                value = 0.0
+            row.append(value)
         z.append(row)
 
     return {
@@ -507,17 +434,9 @@ def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, X_train_d
         "editableX": sx,
         "editableY": sy,
         "editableZ": z,
-        "gridX": x1_enc.tolist(),
-        "gridX2": x2_enc.tolist(),
+        "gridX": x1_encoded.tolist(),
+        "gridX2": x2_encoded.tolist(),
     }
-
-
-
-@app.post("/train")
-def train(request: TrainRequest):
-    # Entrypoint used by the frontend for training and returning editable partials.
-    response = build_train_response(request)
-    return _to_jsonable(response)
 
 
 def build_feature_dict_from_partials(edited_partials: List[Dict], cat_info: Dict) -> Dict:
@@ -531,10 +450,9 @@ def build_feature_dict_from_partials(edited_partials: List[Dict], cat_info: Dict
             continue
 
         if key in cat_info:
-            categories = [str(v) for v in (partial.get("categories") or cat_info.get(key) or [])]
-            y_vals = [float(v) for v in (partial.get("editableY") or [])]
+            categories = [str(value) for value in (partial.get("categories") or cat_info.get(key) or [])]
+            y_vals = [float(value) for value in (partial.get("editableY") or [])]
             if categories and len(y_vals) != len(categories):
-                # Keep alignment deterministic for partially malformed payloads.
                 y_vals = (y_vals + [0.0] * len(categories))[: len(categories)]
             updates[key] = {
                 "datatype": "categorical",
@@ -542,25 +460,22 @@ def build_feature_dict_from_partials(edited_partials: List[Dict], cat_info: Dict
                 "y": y_vals,
             }
         else:
-            x_vals = [float(v) for v in (partial.get("editableX") or [])]
-            y_vals = [float(v) for v in (partial.get("editableY") or [])]
+            x_vals = [float(value) for value in (partial.get("editableX") or [])]
+            y_vals = [float(value) for value in (partial.get("editableY") or [])]
             if not x_vals or not y_vals:
                 continue
             pair_count = min(len(x_vals), len(y_vals))
-            pairs = sorted(zip(x_vals[:pair_count], y_vals[:pair_count]), key=lambda p: p[0])
+            pairs = sorted(zip(x_vals[:pair_count], y_vals[:pair_count]), key=lambda pair: pair[0])
             updates[key] = {
                 "datatype": "numerical",
-                "x": [p[0] for p in pairs],
-                "y": [p[1] for p in pairs],
+                "x": [pair[0] for pair in pairs],
+                "y": [pair[1] for pair in pairs],
             }
     return updates
 
 
 def merge_learned_shapes_preserve_base_grid(base_shapes: Dict, learned_shapes: Dict, feature_keys: List[str]) -> Dict:
-    """
-    Keep the edited base grid/category ordering and project learned shapes onto it.
-    This preserves frontend detail while still reflecting refit updates.
-    """
+    """Project learned shapes onto the original edited grid or category order."""
     merged: Dict = {**base_shapes}
     for key in feature_keys:
         learned = learned_shapes.get(key)
@@ -575,17 +490,17 @@ def merge_learned_shapes_preserve_base_grid(base_shapes: Dict, learned_shapes: D
             base_x_values = base.get("x")
             learned_x_values = learned.get("x")
             learned_y_values = learned.get("y")
-            base_cats = [str(v) for v in ([] if base_x_values is None else base_x_values)]
-            learned_x = [str(v) for v in ([] if learned_x_values is None else learned_x_values)]
-            learned_y = [float(v) for v in ([] if learned_y_values is None else learned_y_values)]
-            learned_map = {cat: learned_y[i] for i, cat in enumerate(learned_x) if i < len(learned_y)}
+            base_categories = [str(value) for value in ([] if base_x_values is None else base_x_values)]
+            learned_x = [str(value) for value in ([] if learned_x_values is None else learned_x_values)]
+            learned_y = [float(value) for value in ([] if learned_y_values is None else learned_y_values)]
+            learned_map = {category: learned_y[i] for i, category in enumerate(learned_x) if i < len(learned_y)}
             base_y_values = base.get("y")
-            base_y = [float(v) for v in ([] if base_y_values is None else base_y_values)]
+            base_y = [float(value) for value in ([] if base_y_values is None else base_y_values)]
             merged[key] = {
                 **base,
                 "datatype": "categorical",
-                "x": base_cats,
-                "y": [learned_map.get(cat, base_y[i] if i < len(base_y) else 0.0) for i, cat in enumerate(base_cats)],
+                "x": base_categories,
+                "y": [learned_map.get(category, base_y[i] if i < len(base_y) else 0.0) for i, category in enumerate(base_categories)],
             }
             continue
 
@@ -611,8 +526,8 @@ def center_shape_functions_for_data(
     features_train: Dict[str, List],
     cat_info: Dict,
 ) -> tuple[Dict, float]:
-    """Center each feature contribution on empirical training data and return intercept shift."""
-    centered = {k: {**v} for k, v in shape_functions.items()}
+    """Center each feature contribution on empirical training data."""
+    centered = {key: {**value} for key, value in shape_functions.items()}
     intercept_shift = 0.0
     for key in feature_keys:
         shape_fn = centered.get(key)
@@ -621,14 +536,14 @@ def center_shape_functions_for_data(
         contribs = evaluate_contribs(shape_fn, features_train.get(key, []), cat_info.get(key))
         if not contribs:
             continue
-        mu = float(np.mean(np.asarray(contribs, dtype=float)))
-        ys_raw = shape_fn.get("y")
-        ys = _coerce_numeric_points(ys_raw)
+        mean_value = float(np.mean(np.asarray(contribs, dtype=float)))
+        ys = _coerce_numeric_points(shape_fn.get("y"))
         if len(ys) == 0:
             continue
-        shape_fn["y"] = [y - mu for y in ys]
-        intercept_shift += mu
+        shape_fn["y"] = [value - mean_value for value in ys]
+        intercept_shift += mean_value
     return centered, intercept_shift
+
 
 def linearize_features(
     feature_dict: Dict,
@@ -639,19 +554,16 @@ def linearize_features(
     num_points: int,
 ) -> Dict:
     """
-    Replace shape functions for reinit features with a joint linear fit on
-    residuals computed from the kept features' contributions.
-    Numerical features get a linear shape; categorical features get mean residuals per category.
+    Replace shape functions for reinit features with a joint linear fit on residuals.
     """
     from sklearn.linear_model import LinearRegression
 
     if not features_to_reinit:
         return feature_dict
 
-    result = {k: dict(v) for k, v in feature_dict.items()}
+    result = {key: dict(value) for key, value in feature_dict.items()}
 
-    # Sum contributions of kept features (everything not being reinitialized)
-    kept_keys = [k for k in feature_dict if k not in features_to_reinit]
+    kept_keys = [key for key in feature_dict if key not in features_to_reinit]
     kept_contribs = np.zeros(len(y_train), dtype=float)
     for key in kept_keys:
         contribs = np.array(
@@ -663,40 +575,56 @@ def linearize_features(
 
     residuals = y_train - kept_contribs
 
-    # Joint linear regression for numerical reinit features
-    reinit_numerical = [k for k in features_to_reinit if k not in cat_info and k in features_train]
+    reinit_numerical = [key for key in features_to_reinit if key not in cat_info and key in features_train]
     if reinit_numerical:
-        X_reinit = np.column_stack(
-            [np.array(features_train[k], dtype=float) for k in reinit_numerical]
-        )
-        lr = LinearRegression(fit_intercept=True).fit(X_reinit, residuals)
-        for i, key in enumerate(reinit_numerical):
+        x_reinit = np.column_stack([np.array(features_train[key], dtype=float) for key in reinit_numerical])
+        linear_model = LinearRegression(fit_intercept=True).fit(x_reinit, residuals)
+        for index, key in enumerate(reinit_numerical):
             vals = np.array(features_train[key], dtype=float)
             x_min, x_max = float(vals.min()), float(vals.max())
-            x_points = (
-                np.linspace(x_min, x_max, num_points).tolist()
-                if x_min != x_max
-                else [x_min] * num_points
-            )
-            y_points = (lr.coef_[i] * np.array(x_points)).tolist()
+            x_points = np.linspace(x_min, x_max, num_points).tolist() if x_min != x_max else [x_min] * num_points
+            y_points = (linear_model.coef_[index] * np.array(x_points)).tolist()
             result[key] = {"datatype": "numerical", "x": x_points, "y": y_points}
 
-    # Mean-residual encoding for categorical reinit features
-    reinit_categorical = [k for k in features_to_reinit if k in cat_info and k in features_train]
+    reinit_categorical = [key for key in features_to_reinit if key in cat_info and key in features_train]
     for key in reinit_categorical:
         categories = cat_info.get(key, [])
         feat_vals = features_train.get(key, [])
         cat_y: List[float] = []
-        for cat in categories:
-            mask = np.array([str(v) == str(cat) for v in feat_vals])
+        for category in categories:
+            mask = np.array([str(value) == str(category) for value in feat_vals])
             cat_y.append(float(np.mean(residuals[mask])) if mask.any() else 0.0)
         result[key] = {
             "datatype": "categorical",
-            "x": [str(c) for c in categories],
+            "x": [str(category) for category in categories],
             "y": cat_y,
         }
 
     return result
+
+
+def _load_dataset(request: TrainRequest):
+    if request.dataset == "adult_income":
+        return preprocess_adult_income(request.seed)
+    if request.dataset == "breast_cancer":
+        return preprocess_breast_cancer()
+    return preprocess_bike_hourly(request.seed)
+
+
+def _calc_metrics(task_type: str, y_true: np.ndarray, y_pred: np.ndarray) -> Dict:
+    if len(y_true) == 0:
+        return {"rmse": None, "mae": None, "r2": None, "acc": None, "count": 0}
+    if task_type == "classification":
+        y_bin = (y_true >= 0.5).astype(float)
+        p_bin = (y_pred >= 0.5).astype(float)
+        acc_val = float(np.mean(y_bin == p_bin))
+        return {"acc": acc_val, "count": int(len(y_true))}
+    rmse_val = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+    mae_val = float(np.mean(np.abs(y_true - y_pred)))
+    mean_y = float(np.mean(y_true))
+    r2_den = float(np.sum((y_true - mean_y) ** 2))
+    r2_val = float(1 - np.sum((y_true - y_pred) ** 2) / r2_den) if r2_den != 0 else 0.0
+    return {"rmse": rmse_val, "mae": mae_val, "r2": r2_val, "count": int(len(y_true))}
 
 
 def build_train_response(
@@ -705,13 +633,11 @@ def build_train_response(
     locked_features: List[str] | None = None,
     feature_modes: Dict[str, str] | None = None,
 ):
-    # Validate the dataset early to keep error responses simple and explicit.
     if request.dataset not in {"bike_hourly", "adult_income", "breast_cancer"}:
         raise HTTPException(status_code=400, detail="Only bike_hourly, adult_income, and breast_cancer are supported.")
-    model_type = request.model_type if request.model_type in {"igann", "igann_interactive"} else "igann"
+    model_type = request.model_type if request.model_type in {"igann", "igann_interactive"} else "igann_interactive"
     center_shapes = bool(getattr(request, "center_shapes", False))
 
-    # Clamp point count and hyperparameters to keep UI responsiveness predictable.
     num_points = max(2, min(250, request.points or 250))
     n_estimators = max(10, min(500, request.n_estimators))
     boost_rate = max(0.01, min(1.0, request.boost_rate))
@@ -721,47 +647,42 @@ def build_train_response(
 
     task_type = "classification" if request.dataset in {"adult_income", "breast_cancer"} else "regression"
     igann_task = "regression" if request.dataset in {"adult_income", "breast_cancer"} else task_type
-    # Dataset-specific preprocessing returns: features, target, categorical metadata, labels.
 
-    if request.dataset == "adult_income":
-        X_proc, y_full, cat_info, labels = preprocess_adult_income(request.seed)
-    elif request.dataset == "breast_cancer":
-        X_proc, y_full, cat_info, labels = preprocess_breast_cancer()
-    else:
-        X_proc, y_full, cat_info, labels = preprocess_bike_hourly(request.seed)
+    x_processed, y_full, cat_info, labels = _load_dataset(request)
 
     requested_features = [str(feature) for feature in (request.selected_features or [])]
     if requested_features:
-        unknown_features = [feature for feature in requested_features if feature not in X_proc.columns]
+        unknown_features = [feature for feature in requested_features if feature not in x_processed.columns]
         if unknown_features:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unknown selected_features: {', '.join(unknown_features)}",
             )
-        X_proc = X_proc.loc[:, requested_features].copy()
+        x_processed = x_processed.loc[:, requested_features].copy()
         cat_info = {key: value for key, value in cat_info.items() if key in requested_features}
         labels = {key: labels.get(key, key) for key in requested_features}
 
-    if X_proc.shape[1] == 0:
+    if x_processed.shape[1] == 0:
         raise HTTPException(status_code=400, detail="No features selected for training.")
 
-    # Train/test split for metrics and visual validation.
-    feature_keys = list(X_proc.columns)
-    X_train_df, X_test_df, y_train_arr, y_test_arr = train_test_split(
-        X_proc, y_full, test_size=0.2, random_state=request.seed
+    feature_keys = list(x_processed.columns)
+    x_train_df, x_test_df, y_train_arr, y_test_arr = train_test_split(
+        x_processed,
+        y_full,
+        test_size=0.2,
+        random_state=request.seed,
     )
     y_train = np.array(y_train_arr).astype(float).flatten()
     y_test = np.array(y_test_arr).astype(float).flatten()
     use_scale_y = bool(request.scale_y) if task_type == "regression" else False
 
-    # Parse feature modes before building interaction pairs so deactivated pairs can be excluded.
     locked_set: Set[str] = set()
     deactivate_set: Set[str] = set()
     if feature_modes:
-        locked_set = {k for k, m in feature_modes.items() if m == "lock"}
-        deactivate_set = {k for k, m in feature_modes.items() if m == "deactivate"}
+        locked_set = {key for key, mode in feature_modes.items() if mode == "lock"}
+        deactivate_set = {key for key, mode in feature_modes.items() if mode == "deactivate"}
     elif locked_features:
-        locked_set = {str(f) for f in locked_features}
+        locked_set = {str(feature) for feature in locked_features}
 
     operation_specs = _normalize_operation_specs(
         feature_keys,
@@ -770,32 +691,32 @@ def build_train_response(
         labels,
     )
     active_operation_specs = [
-        spec for spec in operation_specs
+        spec
+        for spec in operation_specs
         if spec["key"] not in deactivate_set
         and spec["sources"][0] not in deactivate_set
         and spec["sources"][1] not in deactivate_set
     ]
-    # interaction_dummy_cols: operation key -> list of internal column names used for model fitting.
+
     interaction_dummy_cols: Dict[str, List[str]] = {}
     all_dummy_keys: List[str] = []
     extra_train_cols: Dict[str, np.ndarray] = {}
     extra_test_cols: Dict[str, np.ndarray] = {}
     for spec in active_operation_specs:
         display_key = spec["key"]
-        dummies = _build_operation_cols(spec, X_train_df, cat_info)
+        dummies = _build_operation_cols(spec, x_train_df, cat_info)
         col_names = [col for col, _ in dummies]
         for col, vals in dummies:
             extra_train_cols[col] = vals
-        if len(X_test_df):
-            for col, vals in _build_operation_cols(spec, X_test_df, cat_info):
+        if len(x_test_df):
+            for col, vals in _build_operation_cols(spec, x_test_df, cat_info):
                 extra_test_cols[col] = vals
         interaction_dummy_cols[display_key] = col_names
         all_dummy_keys.extend(col_names)
-    # Build augmented DataFrames in one concat to avoid fragmentation warnings.
-    X_train_aug = pd.concat([X_train_df, pd.DataFrame(extra_train_cols, index=X_train_df.index)], axis=1)
-    X_test_aug = pd.concat([X_test_df, pd.DataFrame(extra_test_cols, index=X_test_df.index)], axis=1) if len(X_test_df) else X_test_df.copy()
 
-    # Train either base IGANN or IGANN_interactive based on frontend selection.
+    x_train_aug = pd.concat([x_train_df, pd.DataFrame(extra_train_cols, index=x_train_df.index)], axis=1)
+    x_test_aug = pd.concat([x_test_df, pd.DataFrame(extra_test_cols, index=x_test_df.index)], axis=1) if len(x_test_df) else x_test_df.copy()
+
     model_cls = IGANN_interactive if model_type == "igann_interactive" else IGANN
     model_kwargs = dict(
         task=igann_task,
@@ -823,41 +744,32 @@ def build_train_response(
         fit_cols = [col for col in feature_keys if col not in locked_set and col not in deactivate_set]
         fit_cols_all = fit_cols + all_dummy_keys
         if not fit_cols_all:
-            raise HTTPException(
-                status_code=400,
-                detail="No features left for refit.",
-            )
+            raise HTTPException(status_code=400, detail="No features left for refit.")
         use_preserved_partials = bool(locked_set)
         if use_preserved_partials:
             feature_dict = build_feature_dict_from_partials(edited_partials, cat_info)
-
-            # Remove deactivated features from the base dict.
             for key in list(deactivate_set):
                 feature_dict.pop(key, None)
 
-            # All non-locked, non-deactivated features are reinitialized from linear on residuals.
-            # Interaction features are always reinitialized (never locked/deactivated).
-            reinit_cols = [k for k in feature_keys if k not in locked_set and k not in deactivate_set]
+            reinit_cols = [key for key in feature_keys if key not in locked_set and key not in deactivate_set]
             reinit_cols_all = reinit_cols + all_dummy_keys
             if reinit_cols_all:
-                features_for_reinit = {k: X_train_df[k].tolist() for k in feature_keys}
-                features_for_reinit.update({dk: X_train_aug[dk].tolist() for dk in all_dummy_keys})
+                features_for_reinit = {key: x_train_df[key].tolist() for key in feature_keys}
+                features_for_reinit.update({dummy_key: x_train_aug[dummy_key].tolist() for dummy_key in all_dummy_keys})
                 feature_dict = linearize_features(
-                    feature_dict, reinit_cols_all, features_for_reinit, y_train, cat_info, num_points
+                    feature_dict,
+                    reinit_cols_all,
+                    features_for_reinit,
+                    y_train,
+                    cat_info,
+                    num_points,
                 )
 
-            igann.fit_from_shape_functions(
-                X_train_aug[fit_cols_all],
-                y_train,
-                feature_dict,
-            )
+            igann.fit_from_shape_functions(x_train_aug[fit_cols_all], y_train, feature_dict)
         else:
-            # Default refinement path: retrain the current active basis from scratch rather than
-            # seeding from previously edited partials. This avoids path-dependent behavior when
-            # interactions/features are removed before refinement.
-            igann.fit(X_train_aug[fit_cols_all], y_train)
+            igann.fit(x_train_aug[fit_cols_all], y_train)
     else:
-        igann.fit(X_train_aug, y_train)
+        igann.fit(x_train_aug, y_train)
 
     if center_shapes:
         if model_type != "igann_interactive" or not hasattr(igann, "center_shape_functions"):
@@ -865,76 +777,45 @@ def build_train_response(
                 status_code=400,
                 detail="Centering shape functions currently requires model_type='igann_interactive'.",
             )
-        igann.center_shape_functions(X_train_df, update_intercept=True)
+        igann.center_shape_functions(x_train_df, update_intercept=True)
 
-    def calc_metrics(y_true, y_pred):
-        # Minimal metrics for quick UI summaries.
-        if len(y_true) == 0:
-            return {"rmse": None, "mae": None, "r2": None, "acc": None, "count": 0}
-        if task_type == "classification":
-            y_bin = (y_true >= 0.5).astype(float)
-            p_bin = (y_pred >= 0.5).astype(float)
-            acc_val = float(np.mean(y_bin == p_bin))
-            return {"acc": acc_val, "count": int(len(y_true))}
-        rmse_val = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
-        mae_val = float(np.mean(np.abs(y_true - y_pred)))
-        mean_y = float(np.mean(y_true))
-        r2_den = float(np.sum((y_true - mean_y) ** 2))
-        r2_val = float(1 - np.sum((y_true - y_pred) ** 2) / r2_den) if r2_den != 0 else 0.0
-        return {"rmse": rmse_val, "mae": mae_val, "r2": r2_val, "count": int(len(y_true))}
-
-    # Map feature keys to human-readable labels for display (add operation labels too).
     label_map = dict(labels)
     for spec in active_operation_specs:
         label_map[spec["key"]] = spec["label"]
 
-    features_train = {k: X_train_df[k].tolist() for k in feature_keys}
-    features_test = {k: X_test_df[k].tolist() for k in feature_keys} if len(X_test_df) else {}
-    # Normalize categorical values to strings to match IGANN shape keys
+    features_train = {key: x_train_df[key].tolist() for key in feature_keys}
+    features_test = {key: x_test_df[key].tolist() for key in feature_keys} if len(x_test_df) else {}
     for cat_key in cat_info.keys():
         if cat_key in features_train:
-            features_train[cat_key] = [str(v) for v in features_train[cat_key]]
+            features_train[cat_key] = [str(value) for value in features_train[cat_key]]
         if cat_key in features_test:
-            features_test[cat_key] = [str(v) for v in features_test[cat_key]]
-    test_len = len(X_test_df)
-    # Interaction per-row contributions are computed after shape extraction below.
+            features_test[cat_key] = [str(value) for value in features_test[cat_key]]
+    test_len = len(x_test_df)
 
-    # Shape functions:
-    # - default: interactive GAM wrapper dict or base IGANN dict
-    # - refit-from-edits: merge edited base dict with freshly derived shapes from current model
     if edited_partials and model_type == "igann_interactive" and locked_set:
         base_shapes = build_feature_dict_from_partials(edited_partials, cat_info)
         learned_shapes = igann.get_shape_functions_as_dict()
         shape_functions = merge_learned_shapes_preserve_base_grid(base_shapes, learned_shapes, feature_keys)
-        # Add learned dummy interaction shapes directly from the model.
         for dummy_key in all_dummy_keys:
             if dummy_key in learned_shapes:
                 shape_functions[dummy_key] = learned_shapes[dummy_key]
-        # Remove deactivated features from returned shapes.
         for key in list(deactivate_set):
             shape_functions.pop(key, None)
             for dummy_key in interaction_dummy_cols.get(key, []):
                 shape_functions.pop(dummy_key, None)
     else:
-        shape_functions = (
-            igann.get_gam_feature_dict()
-            if getattr(igann, "GAM", None) is not None
-            else igann.get_shape_functions_as_dict()
-        )
+        shape_functions = igann.get_gam_feature_dict() if getattr(igann, "GAM", None) is not None else igann.get_shape_functions_as_dict()
     if not shape_functions:
         raise HTTPException(status_code=500, detail="Model did not produce shape functions.")
     all_model_keys = feature_keys + all_dummy_keys
     shape_functions = normalize_numeric_shape_points(shape_functions, all_model_keys, cat_info, num_points)
     if center_shapes and edited_partials and model_type == "igann_interactive":
-        shape_functions, _ = center_shape_functions_for_data(
-            shape_functions, feature_keys, features_train, cat_info
-        )
+        shape_functions, _ = center_shape_functions_for_data(shape_functions, feature_keys, features_train, cat_info)
 
     def get_shape(key: str) -> Dict:
         return shape_functions.get(key, {})
 
-    # Build per-row contributions for each feature and aggregate totals.
-    active_keys = [k for k in feature_keys if k not in deactivate_set]
+    active_keys = [key for key in feature_keys if key not in deactivate_set]
     contribs_train: List[np.ndarray] = []
     contribs_test: List[np.ndarray] = []
     for key in active_keys:
@@ -942,11 +823,8 @@ def build_train_response(
         contribs = np.array(evaluate_contribs(shape_fn, features_train[key], cat_info.get(key)))
         contribs_train.append(contribs)
         if test_len:
-            contribs_t = np.array(evaluate_contribs(shape_fn, features_test[key], cat_info.get(key)))
-            contribs_test.append(contribs_t)
+            contribs_test.append(np.array(evaluate_contribs(shape_fn, features_test[key], cat_info.get(key))))
 
-    # Interaction contributions: sum dummy shapes per display key, store in features_train for
-    # frontend importance calculation (variance of actual per-row contributions).
     for spec in active_operation_specs:
         display_key = spec["key"]
         dummy_cols_for_pair = interaction_dummy_cols[display_key]
@@ -954,9 +832,9 @@ def build_train_response(
         pair_test = np.zeros(test_len) if test_len else np.array([])
         for col_name in dummy_cols_for_pair:
             shape_fn = shape_functions.get(col_name, {})
-            pair_train += np.array(evaluate_contribs(shape_fn, X_train_aug[col_name].tolist(), None))
+            pair_train += np.array(evaluate_contribs(shape_fn, x_train_aug[col_name].tolist(), None))
             if test_len:
-                pair_test += np.array(evaluate_contribs(shape_fn, X_test_aug[col_name].tolist(), None))
+                pair_test += np.array(evaluate_contribs(shape_fn, x_test_aug[col_name].tolist(), None))
         contribs_train.append(pair_train)
         if test_len:
             contribs_test.append(pair_test)
@@ -967,7 +845,6 @@ def build_train_response(
     total_train = np.sum(np.stack(contribs_train, axis=0), axis=0) if contribs_train else np.zeros_like(y_train)
     total_test = np.sum(np.stack(contribs_test, axis=0), axis=0) if contribs_test else np.zeros_like(y_test)
     if task_type == "classification":
-        # Calibrate a global intercept so predicted probabilities match the target mean.
         target_mean = float(np.mean(y_train)) if len(y_train) else 0.0
         target_mean = min(max(target_mean, 1e-4), 1 - 1e-4)
         low, high = -12.0, 12.0
@@ -986,25 +863,21 @@ def build_train_response(
         preds_train = total_train + intercept_val
         preds_test = total_test + intercept_val if len(total_test) else np.array([])
 
-    train_metrics = calc_metrics(y_train, preds_train)
-    test_metrics = calc_metrics(y_test, preds_test)
+    train_metrics = _calc_metrics(task_type, y_train, preds_train)
+    test_metrics = _calc_metrics(task_type, y_test, preds_test)
 
-    y_display = y_train.tolist()
-
-    # Build partials: each active (non-deactivated) feature gets editable x/y for the UI.
     partials = []
-    for term_idx, key in enumerate(active_keys):
+    for key in active_keys:
         shape_fn = get_shape(key)
         if key in cat_info:
-            # Categorical features: use category indices as editable positions.
             categories = cat_info[key]
-            mapping = {c: 0.0 for c in categories}
+            mapping = {category: 0.0 for category in categories}
             x_vals = shape_fn.get("x", [])
             y_vals = shape_fn.get("y", [])
-            for i, cat in enumerate(x_vals):
-                if cat in mapping:
-                    mapping[cat] = y_vals[i] if i < len(y_vals) else 0.0
-            contribs = [mapping.get(cat, 0.0) for cat in categories]
+            for i, category in enumerate(x_vals):
+                if category in mapping:
+                    mapping[category] = y_vals[i] if i < len(y_vals) else 0.0
+            contribs = [mapping.get(category, 0.0) for category in categories]
             partials.append(
                 {
                     "key": key,
@@ -1017,8 +890,6 @@ def build_train_response(
                 }
             )
         else:
-            # Continuous features: use wrapper-provided points directly.
-            discrete = {"x": list(shape_fn.get("x", [])), "y": list(shape_fn.get("y", []))}
             partials.append(
                 {
                     "key": key,
@@ -1027,12 +898,11 @@ def build_train_response(
                     "curve": [],
                     "scatterX": features_train[key],
                     "trueSignal": None,
-                    "editableX": discrete["x"],
-                    "editableY": discrete["y"],
+                    "editableX": list(shape_fn.get("x", [])),
+                    "editableY": list(shape_fn.get("y", [])),
                 }
             )
 
-    # Strip scatterX out of partials — raw data lives in the data block now.
     shapes = []
     for partial in partials:
         shape: Dict = {"key": partial["key"], "label": partial["label"]}
@@ -1044,7 +914,6 @@ def build_train_response(
             shape["editableY"] = partial["editableY"]
         shapes.append(shape)
 
-    # Build 2D grid visualizations for operation shape functions.
     interaction_shapes = []
     for spec in active_operation_specs:
         display_key = spec["key"]
@@ -1058,7 +927,7 @@ def build_train_response(
                         spec["sources"][1],
                         dummy_cols_for_pair,
                         dummy_shapes_for_pair,
-                        X_train_df,
+                        x_train_df,
                         cat_info,
                         label_map,
                         n_grid=15,
@@ -1069,13 +938,13 @@ def build_train_response(
                     _build_2d_grid_for_operation(
                         spec,
                         dummy_shapes_for_pair.get(display_key, {}),
-                        X_train_df,
+                        x_train_df,
                         cat_info,
                         n_grid=15,
                     )
                 )
 
-    version_id = str(int(time.time() * 1000))
+    timestamp = int(time.time() * 1000)
     is_refit = bool(edited_partials)
 
     return {
@@ -1097,18 +966,18 @@ def build_train_response(
         },
         "data": {
             "trainX": features_train,
-            "trainY": y_display,
+            "trainY": y_train.tolist(),
             "testY": y_test.tolist(),
             "categories": cat_info,
-            "featureLabels": {k: label_map[k] for k in feature_keys},
+            "featureLabels": {key: label_map[key] for key in feature_keys},
         },
         "version": {
-            "versionId": version_id,
-            "timestamp": int(time.time() * 1000),
+            "versionId": str(timestamp),
+            "timestamp": timestamp,
             "source": "refit" if is_refit else "train",
             "center_shapes": center_shapes,
-            "locked_features": list(locked_set) if feature_modes else [str(f) for f in (locked_features or [])],
-            "feature_modes": {str(k): str(v) for k, v in (feature_modes or {}).items()},
+            "locked_features": list(locked_set) if feature_modes else [str(feature) for feature in (locked_features or [])],
+            "feature_modes": {str(key): str(value) for key, value in (feature_modes or {}).items()},
             "refit_from_edits": is_refit,
             "intercept": intercept_val,
             "trainMetrics": train_metrics,
@@ -1116,169 +985,3 @@ def build_train_response(
             "shapes": shapes + interaction_shapes,
         },
     }
-
-
-@app.post("/refit")
-def refit(request: RefitRequest):
-    """Refit from frontend-edited shape functions and return refreshed shapes/data."""
-    response = build_train_response(
-        request,
-        edited_partials=request.partials,
-        locked_features=request.locked_features,
-        feature_modes=request.feature_modes or None,
-    )
-    return _to_jsonable(response)
-
-
-@app.get("/models")
-def list_models():
-    # Return names without extensions for display and selection.
-    if not MODELS_DIR.exists():
-        return {"models": []}
-    names = sorted([p.stem for p in MODELS_DIR.glob("*.json") if p.is_file()])
-    return {"models": names}
-
-
-def normalize_stored_model_payload(payload: Dict) -> Dict:
-    # Support legacy preset JSONs by mapping them into the current TrainResponse shape.
-    if all(key in payload for key in ("model", "data", "version")):
-        return payload
-
-    partials = payload.get("partials") or []
-    shapes = []
-    train_x = {}
-    categories = {}
-    feature_labels = {}
-    for partial in partials:
-        key = str(partial.get("key", ""))
-        if not key:
-            continue
-        label = str(partial.get("label") or key)
-        partial_categories = [str(cat) for cat in (partial.get("categories") or [])]
-        editable_x = partial.get("editableX")
-        editable_y = partial.get("editableY")
-        scatter_x = partial.get("scatterX") or []
-        train_x[key] = scatter_x
-        feature_labels[key] = label
-        if partial_categories:
-            categories[key] = partial_categories
-        shapes.append(
-            {
-                "key": key,
-                "label": label,
-                "editableX": editable_x,
-                "editableY": editable_y,
-                "categories": partial_categories or None,
-            }
-        )
-
-    model_type = payload.get("model_type") or payload.get("source") or "igann"
-    task = payload.get("task") or "regression"
-    points = int(payload.get("points") or 250)
-    train_metrics = payload.get("trainMetrics") or {"count": len(payload.get("y") or [])}
-    test_metrics = payload.get("testMetrics") or {"count": len(payload.get("testY") or [])}
-    timestamp = int(time.time() * 1000)
-
-    return {
-        "model": {
-            "dataset": payload.get("dataset") or "unknown",
-            "model_type": model_type if model_type in {"igann", "igann_interactive"} else "igann",
-            "task": task if task in {"regression", "classification"} else "regression",
-            "selected_features": list(feature_labels.keys()),
-            "selected_interactions": [shape.get("key") for shape in shapes if shape.get("editableZ")],
-            "selected_operations": [
-                {
-                    "kind": "interaction",
-                    "operator": "product",
-                    "sources": shape.get("key", "").split("__")[:2],
-                    "key": shape.get("key"),
-                    "label": shape.get("label"),
-                }
-                for shape in shapes
-                if shape.get("editableZ")
-            ],
-            "seed": int(payload.get("seed") or 3),
-            "n_estimators": int(payload.get("n_estimators") or 100),
-            "boost_rate": float(payload.get("boost_rate") or 0.1),
-            "init_reg": float(payload.get("init_reg") or 1),
-            "elm_alpha": float(payload.get("elm_alpha") or 1),
-            "early_stopping": int(payload.get("early_stopping") or 50),
-            "scale_y": bool(payload.get("scale_y", True)),
-            "points": points,
-        },
-        "data": {
-            "trainX": train_x,
-            "trainY": payload.get("y") or [],
-            "testY": payload.get("testY") or [],
-            "categories": categories,
-            "featureLabels": feature_labels,
-        },
-        "version": {
-            "versionId": str(timestamp),
-            "timestamp": timestamp,
-            "source": "train",
-            "center_shapes": bool(payload.get("center_shapes", False)),
-            "locked_features": [str(f) for f in (payload.get("locked_features") or [])],
-            "feature_modes": payload.get("feature_modes") or {},
-            "refit_from_edits": False,
-            "intercept": float(payload.get("intercept") or 0.0),
-            "trainMetrics": train_metrics,
-            "testMetrics": test_metrics,
-            "shapes": shapes,
-        },
-    }
-
-
-@app.get("/models/{name}")
-def get_model(name: str):
-    # Resolve a single stored model by name.
-    safe_name = Path(name).name
-    if not safe_name.endswith(".json"):
-        safe_name = f"{safe_name}.json"
-    path = MODELS_DIR / safe_name
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Model not found.")
-    with path.open("r", encoding="utf-8") as f:
-        return normalize_stored_model_payload(json.load(f))
-
-
-@app.get("/saved-models")
-def list_saved_models():
-    # User-edited models saved from the UI.
-    try:
-        return {"models": list_saved_model_names()}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/saved-models/{name}")
-def get_saved_model(name: str):
-    # Resolve a single saved edit by name.
-    try:
-        payload = get_saved_model_payload(name)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    if payload is None:
-        raise HTTPException(status_code=404, detail="Model not found.")
-    return normalize_stored_model_payload(payload)
-
-
-@app.post("/saved-models")
-def save_model(request: SaveModelRequest):
-    # Persist edited model payloads using the configured runtime store.
-    try:
-        safe_name = save_saved_model_payload(request.name, request.payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return {"saved": safe_name}
-
-
-@app.get("/healthz")
-def healthz():
-    # Lightweight liveness check.
-    return {"status": "ok"}

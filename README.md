@@ -36,8 +36,13 @@ Raw form values are no longer logged unless an element explicitly opts in with `
 
 You need the datasets before running the frontend or backend:
 
-- `trainer-service/download_datasets.py`: download datasets.
-- `trainer-service/generate_models.py`: generate stored model outputs.
+- Core package code now lives under `trainer-service/trainer_service/`:
+  - `api.py`: FastAPI routes and app wiring.
+  - `training.py`: training/refit orchestration and shape logic.
+  - `preprocessing/`: dataset-specific preprocessing modules.
+  - `datasets.py`: dataset download helpers.
+  - `generate_models.py`: preset model generation.
+  - `storage.py` and `model_store.py`: saved-model and preset-model persistence.
 
 ```bash
 cd trainer-service
@@ -46,7 +51,9 @@ source .venv/bin/activate
 # Windows (PowerShell): .venv\Scripts\Activate.ps1
 # Windows (cmd.exe): .venv\Scripts\activate.bat
 pip install -r requirements.txt
-uvicorn python_trainer:app --reload --port 4001
+python -m trainer_service.datasets
+python -m trainer_service.generate_models
+uvicorn trainer_service.api:app --reload --port 4001
 ```
 
 The API will be available at `http://localhost:4001` (or set `NEXT_PUBLIC_TRAINER_URL` / `TRAINER_URL` in `gam-lab` to match another port).

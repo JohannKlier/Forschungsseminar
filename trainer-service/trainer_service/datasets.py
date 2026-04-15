@@ -5,8 +5,8 @@ import re
 import urllib.parse
 import urllib.request
 
+from trainer_service.paths import DATA_DIR
 
-DATA_DIR = Path(__file__).parent / "data"
 
 DATASETS = {
     "bike.csv": "1FhiamQAkPqF0OH8vYfxoo98VLTbxHFjy",
@@ -22,7 +22,6 @@ def _download_from_drive(file_id: str, dest: Path) -> None:
         content_type = resp.headers.get("Content-Type", "")
         data = resp.read()
 
-    # Drive returns a confirmation HTML for larger files; follow it if present.
     if "text/html" in content_type:
         text = data.decode("utf-8", errors="ignore")
         match = re.search(r"confirm=([0-9A-Za-z_]+)", text)

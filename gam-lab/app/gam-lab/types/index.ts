@@ -90,6 +90,7 @@ export type ModelDetails = {
 export type Models = {
   baseModel: ModelDetails;
   editedModel: ModelDetails;
+  comparisonModel?: ModelDetails | null;
   residuals: number[];
 };
 
@@ -128,4 +129,16 @@ export type MetricSummary = {
   precision?: number | null;
   recall?: number | null;
   f1?: number | null;
+};
+
+export type MetricWarning = {
+  action: string;
+  details: {
+    label: string;
+    current: number;
+    previous: number;
+    delta: number;
+    deltaPct: number | null;
+    lowerIsBetter: boolean;
+  }[];
 };

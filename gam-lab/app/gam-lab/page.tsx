@@ -27,7 +27,7 @@ function GamLabPageContent() {
   const initialModel = rawModel && rawModel !== "undefined" ? rawModel : null;
   const trainMode = searchParams.get("train") === "1";
   const trainDataset = searchParams.get("dataset") ?? "bike_hourly";
-  const trainModelType = (searchParams.get("model_type") ?? "igann") as "igann" | "igann_interactive";
+  const trainModelType = searchParams.get("model_type") === "igann" ? "igann" : "igann_interactive";
   const trainCenterShapes = searchParams.get("center_shapes") === "true";
   const trainPoints = Number(searchParams.get("points") ?? "250");
   const trainSeed = Number(searchParams.get("seed") ?? "3");
@@ -45,7 +45,6 @@ function GamLabPageContent() {
     dataset,
     setDataset,
     modelType,
-    setModelType,
     centerShapes,
     setCenterShapes,
     shapePoints,
@@ -73,7 +72,7 @@ function GamLabPageContent() {
     setSelectedKnots,
     activePartialIdx,
     setActivePartialIdx,
-    stats,
+    metricWarning,
     lockedFeatures,
     featureModes,
     setFeatureMode,
@@ -99,7 +98,7 @@ function GamLabPageContent() {
     initialTrain: trainMode
       ? {
           dataset: trainDataset,
-          model_type: trainModelType === "igann_interactive" ? "igann_interactive" : "igann",
+          model_type: trainModelType,
           center_shapes: trainCenterShapes,
           points: Number.isFinite(trainPoints) ? trainPoints : 250,
           seed: Number.isFinite(trainSeed) ? trainSeed : 3,
@@ -207,18 +206,6 @@ function GamLabPageContent() {
                           {item.label}
                         </option>
                       ))}
-                    </select>
-                  </label>
-                  <label className={styles.trainingField} htmlFor="gam-lab-model">
-                    <span className={styles.trainingFieldLabel}>Model</span>
-                    <select
-                      id="gam-lab-model"
-                      className={styles.datasetSelect}
-                      value={modelType}
-                      onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
-                    >
-                      <option value="igann">IGANN</option>
-                      <option value="igann_interactive">IGANN interactive</option>
                     </select>
                   </label>
                 </div>
@@ -440,7 +427,7 @@ function GamLabPageContent() {
                   showTourLabels={helpTour.isStepActive("sidebar")}
                   sidebarTab={sidebarTab}
                   setSidebarTab={setSidebarTab}
-                  stats={stats}
+                  metricWarning={metricWarning}
                   history={history}
                   formatHistoryAction={formatHistoryAction}
                   formatHistoryDetail={formatHistoryDetail}

@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from trainer_service.paths import SAVED_MODELS_DIR
 
-SAVED_MODELS_DIR = Path(__file__).parent / "saved_models"
+
 SAVED_MODELS_TABLE = "saved_models"
 
 
@@ -142,7 +143,7 @@ def _get_saved_model_from_postgres(name: str) -> dict[str, Any] | None:
 def _save_saved_model_to_postgres(name: str, payload: dict[str, Any]) -> str:
     safe_name = _normalize_saved_model_name(name)
     _ensure_postgres_schema()
-    _, Jsonb = _load_psycopg()
+    _, jsonb = _load_psycopg()
     with _connect() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -152,7 +153,7 @@ def _save_saved_model_to_postgres(name: str, payload: dict[str, Any]) -> str:
                 ON CONFLICT (model_name)
                 DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
                 """,
-                (safe_name, Jsonb(payload)),
+                (safe_name, jsonb(payload)),
             )
         connection.commit()
     return safe_name

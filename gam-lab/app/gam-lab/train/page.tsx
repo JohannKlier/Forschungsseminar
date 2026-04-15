@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
 import SidebarPanel from "../components/SidebarPanel";
@@ -9,42 +9,17 @@ import FeatureModePanel from "../components/FeatureModePanel";
 import styles from "../page.module.css";
 import trainStyles from "./train.module.css";
 import { useGamLab } from "../hooks/useGamLab";
-import { trainModel } from "../lib/modelApi";
 import { useSidebarActions } from "../hooks/useSidebarActions";
 import { useToolSettings } from "../hooks/useToolSettings";
 import { useAuditLogger } from "../hooks/useAuditLogger";
 import { useUiAuditLogger } from "../hooks/useUiAuditLogger";
-import { FeatureOperation } from "../types";
-import { residualsFromTrainResponse, suggestInteractionOperations } from "../lib/interactionSuggestions";
+import { suggestInteractionOperations } from "../lib/interactionSuggestions";
 
 type FeatureCatalogEntry = {
   key: string;
   label: string;
   kind: "continuous" | "categorical";
 };
-
-type InteractionOption = {
-  pairKey: string;
-  label: string;
-  sources: [string, string];
-};
-
-const OPERATOR_OPTIONS: Array<{ value: FeatureOperation["operator"]; label: string }> = [
-  { value: "product", label: "× Product" },
-  { value: "sum", label: "+ Sum" },
-  { value: "difference", label: "− Difference" },
-  { value: "ratio", label: "/ Ratio" },
-  { value: "absolute_difference", label: "|Δ| Abs diff" },
-];
-
-const buildOperation = (sources: [string, string], label: string, operator: FeatureOperation["operator"]): FeatureOperation => ({
-  kind: "interaction",
-  operator,
-  sources,
-  label: operator === "product" ? label : `${label} (${OPERATOR_OPTIONS.find((option) => option.value === operator)?.label ?? operator})`,
-});
-
-const pairIdForOperation = (operation: Pick<FeatureOperation, "sources">) => operation.sources.join("__");
 
 const FEATURE_CATALOG: Record<string, FeatureCatalogEntry[]> = {
   bike_hourly: [
@@ -119,14 +94,11 @@ export default function TrainPage() {
     dataset,
     setDataset,
     modelType,
-    setModelType,
     centerShapes,
     setCenterShapes,
     selectedFeatures,
     setSelectedFeatures,
-    selectedInteractions,
     setSelectedInteractions,
-    selectedOperations,
     setSelectedOperations,
     shapePoints,
     setShapePoints,
@@ -142,7 +114,6 @@ export default function TrainPage() {
     setElmAlpha,
     earlyStopping,
     setEarlyStopping,
-    scaleY,
     selectedDataset,
     baselineKnots,
     fixedLinesByFeature,
@@ -154,7 +125,7 @@ export default function TrainPage() {
     setSelectedKnots,
     activePartialIdx,
     setActivePartialIdx,
-    stats,
+    metricWarning,
     lockedFeatures,
     featureModes,
     setFeatureMode,
@@ -192,13 +163,9 @@ export default function TrainPage() {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRefitSettings, setShowRefitSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<"shapes" | "features">("shapes");
-  const [suggestingInteractions, setSuggestingInteractions] = useState(false);
-  const [stepwiseSuggestingInteractions, setStepwiseSuggestingInteractions] = useState(false);
-  const effectiveSelectedInteractions = useMemo(() => selectedInteractions ?? [], [selectedInteractions]);
-  const effectiveSelectedOperations = useMemo(() => selectedOperations ?? [], [selectedOperations]);
 
-  const availableFeatures = useMemo(() => FEATURE_CATALOG[dataset] ?? [], [dataset]);
-  const featureKeys = useMemo(() => availableFeatures.map((feature) => feature.key), [availableFeatures]);
+  const availableFeatures = FEATURE_CATALOG[dataset] ?? [];
+  const featureKeys = availableFeatures.map((feature) => feature.key);
 
   useEffect(() => {
     setSelectedFeatures((prev) => {
@@ -210,36 +177,7 @@ export default function TrainPage() {
     });
   }, [featureKeys, setSelectedFeatures]);
 
-  const interactionOptions = useMemo<InteractionOption[]>(() => {
-    const sortedSelected = availableFeatures.filter((feature) => selectedFeatures.includes(feature.key));
-    const pairs: InteractionOption[] = [];
-    for (let i = 0; i < sortedSelected.length; i += 1) {
-      for (let j = i + 1; j < sortedSelected.length; j += 1) {
-        const left = sortedSelected[i];
-        const right = sortedSelected[j];
-        pairs.push({
-          pairKey: `${left.key}__${right.key}`,
-          label: `${left.label} × ${right.label}`,
-          sources: [left.key, right.key],
-        });
-      }
-    }
-    return pairs;
-  }, [availableFeatures, selectedFeatures]);
-
-  useEffect(() => {
-    const validKeys = new Set(interactionOptions.map((option) => option.pairKey));
-    setSelectedInteractions((prev) => {
-      if (prev === undefined) return [];
-      return prev.filter((key) => validKeys.has(key));
-    });
-    setSelectedOperations((prev) => {
-      if (prev === undefined) return [];
-      return prev.filter((operation) => validKeys.has(pairIdForOperation(operation)));
-    });
-  }, [interactionOptions, setSelectedInteractions, setSelectedOperations]);
-
-  const featureSelection = useMemo(() => {
+  const featureSelection = (() => {
     const selected = new Set(selectedFeatures);
     return availableFeatures.reduce(
       (acc, feature) => {
@@ -255,7 +193,7 @@ export default function TrainPage() {
         Array<FeatureCatalogEntry & { checked: boolean }>,
       ],
     );
-  }, [availableFeatures, selectedFeatures]);
+  })();
 
   const togglePretrainFeature = (featureKey: string, checked: boolean) => {
     setSelectedFeatures((prev) => {
@@ -266,39 +204,6 @@ export default function TrainPage() {
     });
   };
 
-  const toggleInteraction = (interactionKey: string, checked: boolean) => {
-    setSelectedInteractions((prev) => {
-      const base = prev ?? [];
-      if (checked) {
-        return base.includes(interactionKey) ? base : [...base, interactionKey];
-      }
-      return base.filter((key) => key !== interactionKey);
-    });
-  };
-
-  const toggleOperation = (option: InteractionOption, checked: boolean) => {
-    toggleInteraction(option.pairKey, checked);
-    setSelectedOperations((prev) => {
-      const base = prev ?? [];
-      const next = base.filter((operation) => pairIdForOperation(operation) !== option.pairKey);
-      if (!checked) return next;
-      return [...next, buildOperation(option.sources, option.label, "product")];
-    });
-  };
-
-  const updateOperationOperator = (option: InteractionOption, operator: FeatureOperation["operator"]) => {
-    setSelectedOperations((prev) => {
-      const base = prev ?? [];
-      const next = base.filter((operation) => pairIdForOperation(operation) !== option.pairKey);
-      return [...next, buildOperation(option.sources, option.label, operator)];
-    });
-  };
-
-  const operationByPair = useMemo(
-    () => Object.fromEntries(effectiveSelectedOperations.map((operation) => [pairIdForOperation(operation), operation])),
-    [effectiveSelectedOperations],
-  );
-
   const applySuggestedOperations = () => {
     if (!models?.residuals || !trainData) return;
     const suggestions = suggestInteractionOperations({
@@ -306,88 +211,8 @@ export default function TrainPage() {
       trainData,
       selectedFeatures,
     });
-    setSelectedInteractions(suggestions.map((operation) => pairIdForOperation(operation)));
+    setSelectedInteractions(suggestions.map((operation) => operation.sources.join("__")));
     setSelectedOperations(suggestions);
-  };
-
-  const suggestFromQuickMainEffectsFit = async () => {
-    if (selectedFeatures.length < 2) return;
-    setSuggestingInteractions(true);
-    try {
-      const quickPayload = await trainModel({
-        dataset,
-        model_type: "igann",
-        center_shapes: false,
-        selected_features: selectedFeatures,
-        selected_interactions: [],
-        selected_operations: [],
-        seed,
-        points: 32,
-        n_estimators: 12,
-        boost_rate: Math.min(boostRate, 0.08),
-        init_reg: initReg,
-        elm_alpha: elmAlpha,
-        early_stopping: 8,
-        scale_y: scaleY,
-      });
-      const suggestions = suggestInteractionOperations({
-        residuals: residualsFromTrainResponse(quickPayload),
-        trainData: quickPayload.data,
-        selectedFeatures,
-      });
-      setSelectedInteractions(suggestions.map((operation) => pairIdForOperation(operation)));
-      setSelectedOperations(suggestions);
-    } catch (error) {
-      console.warn("Failed to suggest interactions from quick fit.", error);
-    } finally {
-      setSuggestingInteractions(false);
-    }
-  };
-
-  const suggestStepwiseInteractions = async () => {
-    if (selectedFeatures.length < 2) return;
-    setStepwiseSuggestingInteractions(true);
-    try {
-      let nextOperations = [...effectiveSelectedOperations];
-      const maxSteps = Math.min(5, Math.max(0, (selectedFeatures.length * (selectedFeatures.length - 1)) / 2));
-
-      for (let step = 0; step < maxSteps; step += 1) {
-        const quickPayload = await trainModel({
-          dataset,
-          model_type: "igann",
-          center_shapes: false,
-          selected_features: selectedFeatures,
-          selected_interactions: nextOperations.map((operation) => pairIdForOperation(operation)),
-          selected_operations: nextOperations,
-          seed,
-          points: 32,
-          n_estimators: 12,
-          boost_rate: Math.min(boostRate, 0.08),
-          init_reg: initReg,
-          elm_alpha: elmAlpha,
-          early_stopping: 8,
-          scale_y: scaleY,
-        });
-
-        const existingPairs = new Set(nextOperations.map((operation) => pairIdForOperation(operation)));
-        const candidate = suggestInteractionOperations({
-          residuals: residualsFromTrainResponse(quickPayload),
-          trainData: quickPayload.data,
-          selectedFeatures,
-          limit: selectedFeatures.length * selectedFeatures.length,
-        }).find((operation) => !existingPairs.has(pairIdForOperation(operation)));
-
-        if (!candidate) break;
-        nextOperations = [...nextOperations, candidate];
-      }
-
-      setSelectedInteractions(nextOperations.map((operation) => pairIdForOperation(operation)));
-      setSelectedOperations(nextOperations);
-    } catch (error) {
-      console.warn("Failed to suggest interactions stepwise.", error);
-    } finally {
-      setStepwiseSuggestingInteractions(false);
-    }
   };
 
   return (
@@ -456,18 +281,6 @@ export default function TrainPage() {
                       ))}
                     </select>
                   </div>
-                  <div className={trainStyles.field}>
-                    <label className={trainStyles.fieldLabel} htmlFor="train-model">Model</label>
-                    <select
-                      id="train-model"
-                      className={trainStyles.select}
-                      value={modelType}
-                      onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
-                    >
-                      <option value="igann">IGANN</option>
-                      <option value="igann_interactive">IGANN interactive</option>
-                    </select>
-                  </div>
                 </div>
 
                 <div className={trainStyles.featureSelectionCard}>
@@ -515,90 +328,6 @@ export default function TrainPage() {
                       </div>
                     ))}
                   </div>
-                </div>
-
-                <div className={trainStyles.featureSelectionCard}>
-                  <div className={trainStyles.featureSelectionHeader}>
-                    <div>
-                      <p className={trainStyles.fieldLabel}>Interactions</p>
-                      <p className={trainStyles.featureSelectionSummary}>
-                        {effectiveSelectedInteractions.length} of {interactionOptions.length} selected
-                      </p>
-                    </div>
-                    <div className={trainStyles.featureSelectionActions}>
-                      <button
-                        type="button"
-                        className={trainStyles.selectionButton}
-                        onClick={suggestFromQuickMainEffectsFit}
-                        disabled={selectedFeatures.length < 2 || suggestingInteractions}
-                      >
-                        {suggestingInteractions ? "Finding..." : "Find suggestions"}
-                      </button>
-                      <button
-                        type="button"
-                        className={trainStyles.selectionButton}
-                        onClick={suggestStepwiseInteractions}
-                        disabled={selectedFeatures.length < 2 || stepwiseSuggestingInteractions}
-                      >
-                        {stepwiseSuggestingInteractions ? "Stepping..." : "Stepwise suggestions"}
-                      </button>
-                      <button
-                        type="button"
-                        className={trainStyles.selectionButton}
-                        onClick={() => {
-                          setSelectedInteractions(interactionOptions.map((option) => option.pairKey));
-                          setSelectedOperations(
-                            interactionOptions.map((option) => buildOperation(option.sources, option.label, "product")),
-                          );
-                        }}
-                        disabled={interactionOptions.length === 0}
-                      >
-                        Select all
-                      </button>
-                      <button
-                        type="button"
-                        className={trainStyles.selectionButton}
-                        onClick={() => {
-                          setSelectedInteractions([]);
-                          setSelectedOperations([]);
-                        }}
-                        disabled={effectiveSelectedInteractions.length === 0}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-
-                  {interactionOptions.length > 0 ? (
-                    <div className={trainStyles.interactionChecklist}>
-                      {interactionOptions.map((option) => (
-                        <div key={option.pairKey} className={trainStyles.interactionOptionRow}>
-                          <label className={trainStyles.featureOption}>
-                            <input
-                              type="checkbox"
-                              checked={effectiveSelectedInteractions.includes(option.pairKey)}
-                              onChange={(event) => toggleOperation(option, event.target.checked)}
-                            />
-                            <span>{option.label}</span>
-                          </label>
-                          <select
-                            className={trainStyles.operatorSelect}
-                            value={operationByPair[option.pairKey]?.operator ?? "product"}
-                            onChange={(event) => updateOperationOperator(option, event.target.value as FeatureOperation["operator"])}
-                            disabled={!effectiveSelectedInteractions.includes(option.pairKey)}
-                          >
-                            {OPERATOR_OPTIONS.map((operator) => (
-                              <option key={operator.value} value={operator.value}>{operator.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className={trainStyles.emptyStateNote}>
-                      Select at least two features above to enable optional interaction terms.
-                    </p>
-                  )}
                 </div>
 
                 <div className={trainStyles.toggleRow}>
@@ -659,19 +388,22 @@ export default function TrainPage() {
                   <button
                     type="button"
                     className={trainStyles.trainButton}
-                    onClick={() => train({
-                      selected_features: selectedFeatures,
-                      selected_interactions: effectiveSelectedInteractions,
-                      selected_operations: effectiveSelectedOperations,
-                    })}
+                    onClick={() => {
+                      setSelectedInteractions([]);
+                      setSelectedOperations([]);
+                      train({
+                        selected_features: selectedFeatures,
+                        selected_interactions: [],
+                        selected_operations: [],
+                      });
+                    }}
                     disabled={status === "loading" || selectedFeatures.length === 0}
                   >
                     {status === "loading" ? "Training…" : "Train selected features"}
                   </button>
                   <p className={trainStyles.actionHint}>
-                    The initial model is trained only on the selected features and selected interactions. Use
-                    {" "}Find suggestions{" "}for one-shot ranking, or{" "}Stepwise suggestions{" "}for greedy add-one,
-                    retrain, repeat selection.
+                    The initial model is trained only on the selected features. Interaction suggestions remain
+                    available later during refinement.
                   </p>
                 </div>
               </section>
@@ -796,7 +528,7 @@ export default function TrainPage() {
                 <SidebarPanel
                   sidebarTab={sidebarTab}
                   setSidebarTab={setSidebarTab}
-                  stats={stats}
+                  metricWarning={metricWarning}
                   history={history}
                   formatHistoryAction={formatHistoryAction}
                   formatHistoryDetail={formatHistoryDetail}

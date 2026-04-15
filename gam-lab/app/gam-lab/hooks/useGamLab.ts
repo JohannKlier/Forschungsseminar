@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { DatasetOption, FeatureMode, FeatureOperation, HistoryChange, HistoryEntry, KnotSet, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, SidebarTab, StatItem, TrainData, TrainResponse } from "../types";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DatasetOption, FeatureMode, FeatureOperation, HistoryChange, HistoryEntry, KnotSet, MetricSummary, MetricWarning, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, SidebarTab, TrainData, TrainResponse } from "../types";
 import { loadModel, refitModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
 import { type AuditLogFn } from "../lib/audit";
@@ -33,6 +33,32 @@ const buildEditableKnots = (shape: ShapeFunction): KnotSet => {
 
 const cloneKnots = (knots: KnotSet): KnotSet => ({ x: [...knots.x], y: [...knots.y] });
 
+const calcRegressionMetrics = (yTrue: number[], yPred: number[]): MetricSummary | null => {
+  const pairs = yTrue.map((y, i) => ({ y, p: yPred[i] })).filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p));
+  if (!pairs.length) return null;
+  const count = pairs.length;
+  const mse = pairs.reduce((sum, { y, p }) => sum + (y - p) ** 2, 0) / count;
+  const mae = pairs.reduce((sum, { y, p }) => sum + Math.abs(y - p), 0) / count;
+  const mean = pairs.reduce((sum, { y }) => sum + y, 0) / count;
+  const totalVariance = pairs.reduce((sum, { y }) => sum + (y - mean) ** 2, 0);
+  const r2 = totalVariance > 0 ? 1 - (mse * count) / totalVariance : 0;
+  return { count, rmse: Math.sqrt(mse), mae, r2 };
+};
+
+const calcClassificationMetrics = (yTrue: number[], yPred: number[]): MetricSummary | null => {
+  const pairs = yTrue.map((y, i) => ({ y, p: yPred[i] })).filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p));
+  if (!pairs.length) return null;
+  const yBin = pairs.map(({ y }) => (y > 0.5 ? 1 : 0));
+  const pBin = pairs.map(({ p }) => (p > 0.5 ? 1 : 0));
+  const tp = yBin.reduce((sum, y, i) => sum + (y === 1 && pBin[i] === 1 ? 1 : 0), 0);
+  const fp = yBin.reduce((sum, y, i) => sum + (y === 0 && pBin[i] === 1 ? 1 : 0), 0);
+  const fn = yBin.reduce((sum, y, i) => sum + (y === 1 && pBin[i] === 0 ? 1 : 0), 0);
+  const acc = yBin.filter((y, i) => y === pBin[i]).length / yBin.length;
+  const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+  const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+  return { count: yBin.length, acc, precision, recall };
+};
+
 // Main state/logic hook that powers the GAM Lab page.
 type InitOptions = {
   initialModel?: string | null;
@@ -63,7 +89,7 @@ export const useGamLab = (options: InitOptions = {}) => {
   const logEvent = options.auditLogger ?? noopAuditLog;
   // User-configurable training inputs.
   const [dataset, setDataset] = useState(DATASETS[0].id);
-  const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann");
+  const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann_interactive");
   const [centerShapes, setCenterShapes] = useState(false);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   const [selectedInteractions, setSelectedInteractions] = useState<string[] | undefined>(undefined);
@@ -590,34 +616,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     lastSelectionContextRef.current = nextContext;
   }, [currentVersion, activePartialIdx, baselineKnots, knotEdits]);
 
-  // Background worker keeps stats responsive during edits.
-  useEffect(() => {
-    if (!currentVersion || !trainData) {
-      if (workerDebounceRef.current != null) {
-        window.clearTimeout(workerDebounceRef.current);
-        workerDebounceRef.current = null;
-      }
-      setModels(null);
-      return;
-    }
-    if (typeof window === "undefined") return;
-    if (!workerRef.current) {
-      workerRef.current = new Worker(new URL("../workers/modelWorker.ts", import.meta.url));
-      workerRef.current.onmessage = (e) => { setModels(e.data); };
-    }
-    if (workerDebounceRef.current != null) window.clearTimeout(workerDebounceRef.current);
-    workerDebounceRef.current = window.setTimeout(() => {
-      workerRef.current?.postMessage({ version: currentVersion, trainData, modelInfo, baselineKnots, knotEdits: committedEdits });
-      workerDebounceRef.current = null;
-    }, 40);
-    return () => {
-      if (workerDebounceRef.current != null) {
-        window.clearTimeout(workerDebounceRef.current);
-        workerDebounceRef.current = null;
-      }
-    };
-  }, [currentVersion, trainData, modelInfo, baselineKnots, committedEdits]);
-
   const buildChanges = (before: KnotSet, after: KnotSet) => {
     const beforeMap = new Map<number, number>();
     const afterMap = new Map<number, number>();
@@ -709,14 +707,14 @@ export const useGamLab = (options: InitOptions = {}) => {
     setCommittedEdits((prev) => ({ ...prev, [featureKey]: cloneKnots(next) }));
   };
 
-  const rebuildEditsFromHistory = (entries: typeof history) => {
+  const rebuildEditsFromHistory = useCallback((entries: HistoryEntry[]) => {
     const nextEdits: Record<string, KnotSet> = {};
     entries.forEach((entry) => {
       const base = nextEdits[entry.featureKey] ?? baselineKnots[entry.featureKey] ?? { x: [], y: [] };
       nextEdits[entry.featureKey] = applyChanges(base, entry.changes, "redo");
     });
     return nextEdits;
-  };
+  }, [baselineKnots]);
 
   const applyHistoryCursor = (nextCursor: number, entries: typeof history) => {
     const clamped = Math.max(0, Math.min(entries.length, nextCursor));
@@ -819,84 +817,105 @@ export const useGamLab = (options: InitOptions = {}) => {
     applyHistoryCursor(nextCursor, nextHistory);
   };
 
-  // Compute dashboard metrics: initial / last / latest / current(live).
-  // initial  = server-computed metrics from the very first training run (versions[0])
-  // last     = server-computed metrics from the version just before current
-  // latest   = server-computed metrics from the most recent train/refit (currentVersion)
-  // current  = live frontend metrics recalculated from edited knots via worker
-  const stats = useMemo<StatItem[] | null>(() => {
-    if (!modelInfo || !currentVersion) return null;
-    const items: StatItem[] = [];
+  const comparisonEdits = useMemo(
+    () => (historyCursor > 0 ? rebuildEditsFromHistory(history.slice(0, historyCursor - 1)) : null),
+    [history, historyCursor, rebuildEditsFromHistory],
+  );
 
-    const isClassification = modelInfo.task === "classification";
+  const metricWarning = useMemo<MetricWarning | null>(() => {
+    if (!modelInfo || !trainData || !models?.comparisonModel || historyCursor <= 0) return null;
 
-    const calcRegression = (yTrue: number[], yPred: number[]) => {
-      const pairs = yTrue.map((y, i) => ({ y, p: yPred[i] })).filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p));
-      if (!pairs.length) return null;
-      const n = pairs.length;
-      const mse = pairs.reduce((s, { y, p }) => s + (y - p) ** 2, 0) / n;
-      const mae = pairs.reduce((s, { y, p }) => s + Math.abs(y - p), 0) / n;
-      const yMean = pairs.reduce((s, { y }) => s + y, 0) / n;
-      const ssTot = pairs.reduce((s, { y }) => s + (y - yMean) ** 2, 0);
-      const r2 = ssTot > 0 ? 1 - (mse * n) / ssTot : 0;
-      return { rmse: Math.sqrt(mse), mae, r2, count: n };
-    };
+    const currentMetric = modelInfo.task === "classification"
+      ? calcClassificationMetrics(trainData.trainY, models.editedModel.preds)
+      : calcRegressionMetrics(trainData.trainY, models.editedModel.preds);
+    const previousMetric = modelInfo.task === "classification"
+      ? calcClassificationMetrics(trainData.trainY, models.comparisonModel.preds)
+      : calcRegressionMetrics(trainData.trainY, models.comparisonModel.preds);
+    if (!currentMetric || !previousMetric) return null;
 
-    const calcClassification = (yTrue: number[], yPred: number[]) => {
-      const pairs = yTrue.map((y, i) => ({ y, p: yPred[i] })).filter((pair) => Number.isFinite(pair.y) && Number.isFinite(pair.p));
-      if (!pairs.length) return null;
-      const yBin = pairs.map(({ y }) => (y > 0.5 ? 1 : 0));
-      const pBin = pairs.map(({ p }) => (p > 0.5 ? 1 : 0));
-      const tp = yBin.reduce((s, y, i) => s + (y === 1 && pBin[i] === 1 ? 1 : 0), 0 as number);
-      const fp = yBin.reduce((s, y, i) => s + (y === 0 && pBin[i] === 1 ? 1 : 0), 0 as number);
-      const fn = yBin.reduce((s, y, i) => s + (y === 1 && pBin[i] === 0 ? 1 : 0), 0 as number);
-      const acc = yBin.filter((y, i) => y === pBin[i]).length / yBin.length;
-      const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
-      const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
-      return { acc, precision, recall, count: yBin.length };
-    };
+    const latestEntry = history[historyCursor - 1];
+    if (!latestEntry) return null;
 
-    const makeBarItem = (
-      label: string,
-      initial: number | null,
-      last: number | null,
-      latest: number | null,
-      current: number | null,
-      lowerIsBetter = false,
-      format = "0.000",
-    ): StatItem => ({ label, kind: "bar", initial, last, latest, current, lowerIsBetter, format });
-    const makeValueItem = (label: string, value: string): StatItem => ({ label, kind: "value", value });
+    const details = modelInfo.task === "classification"
+      ? (() => {
+          const current = currentMetric.acc;
+          const previous = previousMetric.acc;
+          if (!Number.isFinite(current) || !Number.isFinite(previous)) return [];
+          const delta = current - previous;
+          return delta <= -0.015
+            ? [{
+                label: "Accuracy",
+                current,
+                previous,
+                delta,
+                deltaPct: previous !== 0 ? (delta / Math.abs(previous)) * 100 : null,
+                lowerIsBetter: false,
+              }]
+            : [];
+        })()
+      : [
+          { label: "RMSE", current: currentMetric.rmse ?? NaN, previous: previousMetric.rmse ?? NaN, lowerIsBetter: true },
+          { label: "MAE", current: currentMetric.mae ?? NaN, previous: previousMetric.mae ?? NaN, lowerIsBetter: true },
+          { label: "R²", current: currentMetric.r2 ?? NaN, previous: previousMetric.r2 ?? NaN, lowerIsBetter: false },
+        ].flatMap((item) => {
+          if (!Number.isFinite(item.current) || !Number.isFinite(item.previous)) return [];
+          const delta = item.current - item.previous;
+          if (item.lowerIsBetter) {
+            const relativeIncrease = item.previous !== 0 ? (item.current - item.previous) / Math.abs(item.previous) : Number.POSITIVE_INFINITY;
+            return delta > 0 && relativeIncrease >= 0.03
+              ? [{
+                  ...item,
+                  delta,
+                  deltaPct: Number.isFinite(relativeIncrease) ? relativeIncrease * 100 : null,
+                }]
+              : [];
+          }
+          return delta <= -0.02
+            ? [{
+                ...item,
+                delta,
+                deltaPct: item.previous !== 0 ? (delta / Math.abs(item.previous)) * 100 : null,
+              }]
+            : [];
+        });
 
-    const initialVersion = versions[0];
-    const prevVersion = versions.length > 1 ? versions[versions.length - 2] : versions[0];
-    const initTrain = initialVersion?.trainMetrics;
-    const prevTrain = prevVersion?.trainMetrics ?? null;
-    const latestTrain = currentVersion.trainMetrics;
+    return details.length ? { action: latestEntry.action, details } : null;
+  }, [history, historyCursor, modelInfo, models, trainData]);
 
-    const trainY = trainData?.trainY ?? [];
-    const liveMetric = models
-      ? isClassification
-        ? calcClassification(trainY, models.editedModel.preds)
-        : calcRegression(trainY, models.editedModel.preds)
-      : null;
-
-    const n = initTrain?.count ?? latestTrain?.count ?? 0;
-
-    if (isClassification) {
-      const curAcc = liveMetric && "acc" in liveMetric ? liveMetric.acc : null;
-      items.push(makeBarItem("Accuracy", initTrain?.acc ?? null, prevTrain?.acc ?? null, latestTrain?.acc ?? null, curAcc));
-    } else {
-      const curRmse = liveMetric && "rmse" in liveMetric ? liveMetric.rmse : null;
-      const curMae = liveMetric && "mae" in liveMetric ? liveMetric.mae : null;
-      const curR2 = liveMetric && "r2" in liveMetric ? liveMetric.r2 : null;
-      items.push(makeBarItem("RMSE", initTrain?.rmse ?? null, prevTrain?.rmse ?? null, latestTrain?.rmse ?? null, curRmse, true));
-      items.push(makeBarItem("MAE", initTrain?.mae ?? null, prevTrain?.mae ?? null, latestTrain?.mae ?? null, curMae, true));
-      items.push(makeBarItem("R²", initTrain?.r2 ?? null, prevTrain?.r2 ?? null, latestTrain?.r2 ?? null, curR2));
+  // Background worker keeps live predictions responsive during edits.
+  useEffect(() => {
+    if (!currentVersion || !trainData) {
+      if (workerDebounceRef.current != null) {
+        window.clearTimeout(workerDebounceRef.current);
+        workerDebounceRef.current = null;
+      }
+      setModels(null);
+      return;
     }
-    items.push(makeValueItem("n", n.toString()));
-
-    return items;
-  }, [modelInfo, trainData, versions, currentVersion, models]);
+    if (typeof window === "undefined") return;
+    if (!workerRef.current) {
+      workerRef.current = new Worker(new URL("../workers/modelWorker.ts", import.meta.url));
+      workerRef.current.onmessage = (e) => { setModels(e.data); };
+    }
+    if (workerDebounceRef.current != null) window.clearTimeout(workerDebounceRef.current);
+    workerDebounceRef.current = window.setTimeout(() => {
+      workerRef.current?.postMessage({
+        version: currentVersion,
+        trainData,
+        modelInfo,
+        baselineKnots,
+        knotEdits: committedEdits,
+        comparisonKnotEdits: comparisonEdits,
+      });
+      workerDebounceRef.current = null;
+    }, 40);
+    return () => {
+      if (workerDebounceRef.current != null) {
+        window.clearTimeout(workerDebounceRef.current);
+        workerDebounceRef.current = null;
+      }
+    };
+  }, [baselineKnots, committedEdits, comparisonEdits, currentVersion, modelInfo, trainData]);
 
   // Expose a synthetic `result` object so pages/components that pass `result` as a prop
   // get a consistent view without needing individual model/data/version props.
@@ -980,7 +999,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     undoLast,
     redoLast,
     deleteHistoryEntry,
-    stats,
+    metricWarning,
     modelSource,
     train,
     manualRefitFromEdits,
