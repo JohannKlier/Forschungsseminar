@@ -13,6 +13,7 @@ from trainer_service.preprocessing import (
     preprocess_adult_income,
     preprocess_bike_hourly,
     preprocess_breast_cancer,
+    preprocess_mimic4_mean_100_full,
 )
 from trainer_service.schemas import TrainRequest
 
@@ -608,6 +609,8 @@ def _load_dataset(request: TrainRequest):
         return preprocess_adult_income(request.seed)
     if request.dataset == "breast_cancer":
         return preprocess_breast_cancer()
+    if request.dataset == "mimic4_mean_100_full":
+        return preprocess_mimic4_mean_100_full(request.seed)
     return preprocess_bike_hourly(request.seed)
 
 
@@ -633,8 +636,12 @@ def build_train_response(
     locked_features: List[str] | None = None,
     feature_modes: Dict[str, str] | None = None,
 ):
-    if request.dataset not in {"bike_hourly", "adult_income", "breast_cancer"}:
-        raise HTTPException(status_code=400, detail="Only bike_hourly, adult_income, and breast_cancer are supported.")
+    supported_datasets = {"bike_hourly", "adult_income", "breast_cancer", "mimic4_mean_100_full"}
+    if request.dataset not in supported_datasets:
+        raise HTTPException(
+            status_code=400,
+            detail="Only bike_hourly, adult_income, breast_cancer, and mimic4_mean_100_full are supported.",
+        )
     model_type = request.model_type if request.model_type in {"igann", "igann_interactive"} else "igann_interactive"
     center_shapes = bool(getattr(request, "center_shapes", False))
 
@@ -645,8 +652,9 @@ def build_train_response(
     elm_alpha = max(0.01, min(10.0, request.elm_alpha))
     early_stopping = max(5, min(200, request.early_stopping))
 
-    task_type = "classification" if request.dataset in {"adult_income", "breast_cancer"} else "regression"
-    igann_task = "regression" if request.dataset in {"adult_income", "breast_cancer"} else task_type
+    classification_datasets = {"adult_income", "breast_cancer", "mimic4_mean_100_full"}
+    task_type = "classification" if request.dataset in classification_datasets else "regression"
+    igann_task = "regression" if request.dataset in classification_datasets else task_type
 
     x_processed, y_full, cat_info, labels = _load_dataset(request)
 
@@ -666,11 +674,17 @@ def build_train_response(
         raise HTTPException(status_code=400, detail="No features selected for training.")
 
     feature_keys = list(x_processed.columns)
+    stratify = None
+    if task_type == "classification":
+        unique_targets, target_counts = np.unique(y_full, return_counts=True)
+        if len(unique_targets) > 1 and int(np.min(target_counts)) >= 2:
+            stratify = y_full
     x_train_df, x_test_df, y_train_arr, y_test_arr = train_test_split(
         x_processed,
         y_full,
         test_size=0.2,
         random_state=request.seed,
+        stratify=stratify,
     )
     y_train = np.array(y_train_arr).astype(float).flatten()
     y_test = np.array(y_test_arr).astype(float).flatten()

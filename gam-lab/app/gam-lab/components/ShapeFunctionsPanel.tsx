@@ -21,10 +21,13 @@ const ALIGN_ACTIONS: { value: AlignSelectionMode; label: string; shortLabel: str
   { value: "right", label: "Align right", shortLabel: "Right" },
 ];
 
+const EMPTY_FIXED_LINES: Array<{ id: string; knots: KnotSet }> = [];
+
 type Props = {
   showTourLabels?: boolean;
   shapes: ShapeFunction[];
   trainData: TrainData;
+  featureDescriptions?: Record<string, string>;
   baselineKnots: Record<string, KnotSet>;
   fixedLinesByFeature: Record<string, Array<{ id: string; knots: KnotSet }>>;
   knots: KnotSet;
@@ -54,6 +57,7 @@ export default function ShapeFunctionsPanel({
   showTourLabels = false,
   shapes,
   trainData,
+  featureDescriptions,
   baselineKnots,
   fixedLinesByFeature,
   knots,
@@ -139,6 +143,15 @@ export default function ShapeFunctionsPanel({
     return { rawByKey, normalizedByKey };
   }, [shapes, trainData.trainX, baselineKnots]);
   const formatImportance = (value: number) => (Number.isFinite(value) ? value.toFixed(3) : "0.000");
+
+  const sortedShapeIndices = useMemo(
+    () =>
+      shapes
+        .map((sf, idx) => ({ idx, importance: featureImportance.normalizedByKey[sf.key] ?? 0 }))
+        .sort((a, b) => b.importance - a.importance)
+        .map(({ idx }) => idx),
+    [shapes, featureImportance.normalizedByKey],
+  );
 
   const catRanges = useMemo(() => {
     const ranges: Record<string, { min: number; max: number }> = {};
@@ -297,7 +310,7 @@ export default function ShapeFunctionsPanel({
             key={s.key}
             knots={baseKnots}
             baseline={baselineKnots[s.key]}
-            fixedLines={fixedLinesByFeature[s.key] ?? []}
+            fixedLines={fixedLinesByFeature[s.key] ?? EMPTY_FIXED_LINES}
             scatterX={scatterX}
             featureKey={s.key}
             interactionMode={interactionMode}
@@ -349,13 +362,15 @@ export default function ShapeFunctionsPanel({
                 onChange={(event) => setActivePartialIdx(Number(event.target.value))}
                 aria-label="Feature"
               >
-                {shapes.map((sf, idx) => (
-                  <option key={sf.key} value={idx}>
-                    {sf.editableZ ? "2D • " : sf.categories && sf.categories.length ? "Cat • " : "Cont • "}
-                    {sf.label || sf.key || `x${idx + 1}`}
-                    {` • I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}`}
-                  </option>
-                ))}
+                {sortedShapeIndices.map((idx) => {
+                  const sf = shapes[idx];
+                  return (
+                    <option key={sf.key} value={idx}>
+                      {sf.label || sf.key || `x${idx + 1}`}
+                      {` — I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}`}
+                    </option>
+                  );
+                })}
               </select>
               <button
                 type="button"
@@ -366,6 +381,9 @@ export default function ShapeFunctionsPanel({
                 ›
               </button>
             </div>
+            {featureDescriptions?.[partial.key] ? (
+              <p className={styles.featureDescription}>{featureDescriptions[partial.key]}</p>
+            ) : null}
             <div className={styles.plotWithActionsRow}>
               <div className={`${styles.plotArea} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
                 {showTourLabels ? (

@@ -4,6 +4,13 @@ import { preserveSelectionForNextKnots } from "../lib/selection";
 
 export type AlignSelectionMode = "left" | "center" | "right";
 
+const areKnotsEqual = (left: KnotSet, right: KnotSet) => (
+  left.x.length === right.x.length &&
+  left.y.length === right.y.length &&
+  left.x.every((value, index) => value === right.x[index]) &&
+  left.y.every((value, index) => value === right.y[index])
+);
+
 type Params = {
   partial: ShapeFunction | null;
   knots: KnotSet;
@@ -85,6 +92,8 @@ export const useShapeFunctionActions = ({
   }, [currentContinuousKnots, currentSelectionIdentity, partial, selectedKnots]);
 
   const applyKnotUpdate = (featureKey: string, next: KnotSet) => {
+    const current = knotEdits[featureKey] ?? knots;
+    if (areKnotsEqual(current, next)) return;
     setKnots(next);
     setKnotEdits((prev) => ({ ...prev, [featureKey]: next }));
     onCommitEdits(featureKey, next);
@@ -93,7 +102,10 @@ export const useShapeFunctionActions = ({
   const handleKnotChange = (next: KnotSet) => {
     if (!partial) return;
     applyKnotUpdate(partial.key, next);
-    setSelectedKnots((prev) => prev.filter((idx) => idx < next.x.length));
+    setSelectedKnots((prev) => {
+      const filtered = prev.filter((idx) => idx < next.x.length);
+      return filtered.length === prev.length ? prev : filtered;
+    });
   };
 
   const handleDragStart = () => {

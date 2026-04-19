@@ -13,6 +13,11 @@ const DATASETS: DatasetOption[] = [
     label: "Breast cancer (Wisconsin)",
     summary: "Diagnostic features for malignant vs benign tumors.",
   },
+  {
+    id: "mimic4_mean_100_full",
+    label: "MIMIC-IV mortality",
+    summary: "ICU cohort with demographics, length of stay, and mean vital/lab features.",
+  },
 ];
 
 // Fixed seed keeps demos deterministic across refreshes.

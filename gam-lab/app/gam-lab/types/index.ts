@@ -36,6 +36,7 @@ export type TrainData = {
   testY: number[];
   categories: Record<string, string[]>; // ordered category lists per categorical feature
   featureLabels: Record<string, string>; // display labels per feature key
+  featureDescriptions?: Record<string, string>; // optional human-readable descriptions; sent by backend or injected from frontend catalog
 };
 
 // Model hyperparameters and dataset metadata.

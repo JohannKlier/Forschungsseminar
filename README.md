@@ -57,6 +57,7 @@ uvicorn trainer_service.api:app --reload --port 4001
 ```
 
 The API will be available at `http://localhost:4001` (or set `NEXT_PUBLIC_TRAINER_URL` / `TRAINER_URL` in `gam-lab` to match another port).
+The MIMIC-IV option expects `mimic4_mean_100_full.csv` at `trainer-service/data/mimic4_mean_100_full.csv`.
 
 Trainer saved models default to filesystem storage under `trainer-service/saved_models`.
 For deployment, switch them to Postgres:

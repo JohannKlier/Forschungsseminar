@@ -99,6 +99,14 @@ const normalizeLegacyModelPayload = (payload: Record<string, unknown>): TrainRes
       testY,
       categories,
       featureLabels,
+      featureDescriptions:
+        payload.featureDescriptions != null && typeof payload.featureDescriptions === "object"
+          ? Object.fromEntries(
+              Object.entries(payload.featureDescriptions as Record<string, unknown>).filter(
+                (entry): entry is [string, string] => typeof entry[1] === "string",
+              ),
+            )
+          : undefined,
     },
     version: {
       versionId: String(timestamp),
