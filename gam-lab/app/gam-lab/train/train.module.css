@@ -38,13 +38,6 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-/* Feature panel full-width override */
-.featurePanel {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-}
-
 .trainHeader {
   display: flex;
   align-items: flex-start;
@@ -688,38 +681,6 @@
 
 .preTrainToggleInput:checked ~ .preTrainToggleTrack .preTrainToggleThumb {
   transform: translateX(20px);
-}
-
-/* Refit actions row: primary + secondary buttons side by side */
-.refitActions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-/* Secondary "Train" button shown when model is already loaded */
-.retrainButton {
-  border: 1.5px solid #cbd5e1;
-  border-radius: 0.6rem;
-  padding: 0 0.9rem;
-  height: 34px;
-  background: transparent;
-  color: #475569;
-  font-weight: 600;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: border-color 0.15s ease, color 0.15s ease;
-  white-space: nowrap;
-}
-
-.retrainButton:hover {
-  border-color: #94a3b8;
-  color: #0f172a;
-}
-
-.retrainButton:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 /* Inline confirmation banner */

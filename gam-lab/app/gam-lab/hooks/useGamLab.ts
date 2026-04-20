@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DatasetOption, FeatureMode, FeatureOperation, HistoryChange, HistoryEntry, KnotSet, MetricSummary, MetricWarning, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, SidebarTab, TrainData, TrainResponse } from "../types";
-import { loadModel, refitModel, trainModel } from "../lib/modelApi";
+import { DatasetOption, FeatureOperation, HistoryChange, HistoryEntry, KnotSet, MetricSummary, MetricWarning, ModelInfo, Models, ShapeFunction, ShapeFunctionVersion, SidebarTab, TrainData, TrainResponse } from "../types";
+import { loadModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
 import { type AuditLogFn } from "../lib/audit";
 
@@ -114,7 +114,6 @@ export const useGamLab = (options: InitOptions = {}) => {
   // Core separated state: model metadata, raw data, and accumulated versions.
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [trainData, setTrainData] = useState<TrainData | null>(null);
-  // Versions accumulate across retrains; the latest is always versions[versions.length - 1].
   const [versions, setVersions] = useState<ShapeFunctionVersion[]>([]);
 
   // Editing state for the current feature and its knot history.
@@ -131,8 +130,6 @@ export const useGamLab = (options: InitOptions = {}) => {
   const workerDebounceRef = useRef<number | null>(null);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyCursor, setHistoryCursor] = useState(0);
-  const [featureModes, setFeatureModes] = useState<Record<string, FeatureMode>>({});
-  // Tracks knots for all features ever seen, including deactivated ones.
   const persistedEditsRef = useRef<Record<string, KnotSet>>({});
 
   const lastSelectionContextRef = useRef<{ versionId: string | null; featureKey: string | null }>({
@@ -157,14 +154,11 @@ export const useGamLab = (options: InitOptions = {}) => {
     [currentVersion, activePartialIdx],
   );
 
-  // Apply a new API response: update model info, data, and append the version.
-  const applyResponse = (payload: TrainResponse, isRefit: boolean) => {
+  // Apply a new API response: update model info, data, and current version.
+  const applyResponse = (payload: TrainResponse) => {
     setModelInfo(payload.model);
-    // Data stays stable across refits of the same dataset+seed; always update on fresh train.
-    if (!isRefit) {
-      setTrainData(payload.data);
-    }
-    setVersions((prev) => (isRefit ? [...prev, payload.version] : [payload.version]));
+    setTrainData(payload.data);
+    setVersions([payload.version]);
   };
 
   const summarizeChanges = (changes: HistoryChange[]) => {
@@ -228,7 +222,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     setModelSource("train");
     try {
       const payload = await trainModel(requestedParams);
-      applyResponse({ ...payload, source: "service" }, false);
+      applyResponse({ ...payload, source: "service" });
       logEvent({
         category: "model",
         action: "model.train_succeeded",
@@ -319,7 +313,7 @@ export const useGamLab = (options: InitOptions = {}) => {
           : value;
 
       const payload = isSaved ? await loadSavedModel(name) : await loadModel(name);
-      applyResponse({ ...payload, source: isSaved ? "saved" : "model" }, false);
+      applyResponse({ ...payload, source: isSaved ? "saved" : "model" });
 
       // Restore UI parameters from stored model info.
       setDataset(payload.model.dataset);
@@ -341,9 +335,6 @@ export const useGamLab = (options: InitOptions = {}) => {
       if (typeof payload.model.elm_alpha === "number") setElmAlpha(payload.model.elm_alpha);
       if (typeof payload.model.early_stopping === "number") setEarlyStopping(payload.model.early_stopping);
       if (typeof payload.version.center_shapes === "boolean") setCenterShapes(payload.version.center_shapes);
-      if (payload.version.feature_modes && typeof payload.version.feature_modes === "object") {
-        setFeatureModes(payload.version.feature_modes as Record<string, FeatureMode>);
-      }
       logEvent({
         category: "model",
         action: "model.load_succeeded",
@@ -372,7 +363,6 @@ export const useGamLab = (options: InitOptions = {}) => {
   };
 
   // Build the save payload from the current state.
-  // Includes all known features (even deactivated ones) so the backend can reinstate them.
   const buildSavePayload = (): TrainResponse | null => {
     if (!modelInfo || !trainData || !currentVersion) return null;
     const allKeys = Object.keys(trainData.featureLabels);
@@ -441,130 +431,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
-  // Toggle lock for a feature — used by ShapeFunctionsPanel's lock button.
-  const toggleFeatureLock = (featureKey: string) => {
-    setFeatureModes((prev) => {
-      const isLocked = prev[featureKey] === "lock";
-      logEvent({
-        category: "edit",
-        action: "feature.lock_toggled",
-        featureKey,
-        detail: { mode: isLocked ? "unlock" : "lock" },
-      });
-      if (isLocked) {
-        const next = { ...prev };
-        delete next[featureKey];
-        return next;
-      }
-      return { ...prev, [featureKey]: "lock" };
-    });
-  };
-
-  const setFeatureMode = (featureKey: string, mode: FeatureMode | undefined) => {
-    setFeatureModes((prev) => {
-      logEvent({
-        category: "edit",
-        action: "feature.mode_changed",
-        featureKey,
-        detail: { mode: mode ?? null, previous: prev[featureKey] ?? null },
-      });
-      if (mode === undefined) {
-        const next = { ...prev };
-        delete next[featureKey];
-        return next;
-      }
-      return { ...prev, [featureKey]: mode };
-    });
-  };
-
-  const manualRefitFromEdits = async () => {
-    if (!modelInfo || !currentVersion) return;
-    if (modelType !== "igann_interactive") {
-      logEvent({
-        category: "model",
-        action: "model.refit_blocked",
-        detail: {
-          reason: "requires_igann_interactive",
-          modelType,
-        },
-      });
-      return;
-    }
-    const payload = buildSavePayload();
-    if (!payload) return;
-    logEvent({
-      category: "model",
-      action: "model.refit_requested",
-      detail: {
-        dataset,
-        modelType,
-        versionId: currentVersion.versionId,
-        featureModes,
-      },
-    });
-    setStatus("loading");
-    setModelSource("train");
-    try {
-      const refitPoints = typeof modelInfo.points === "number" ? modelInfo.points : shapePoints;
-      const refitPayload = await refitModel({
-        dataset,
-        model_type: modelType,
-        center_shapes: centerShapes,
-        selected_features: modelInfo.selected_features ?? Object.keys(trainData?.featureLabels ?? {}),
-        selected_interactions: selectedInteractions ?? modelInfo.selected_interactions ?? currentVersion.shapes.filter((shape) => shape.editableZ).map((shape) => shape.key),
-        selected_operations: selectedOperations ?? modelInfo.selected_operations,
-        seed,
-        points: refitPoints,
-        n_estimators: nEstimators,
-        boost_rate: boostRate,
-        init_reg: initReg,
-        elm_alpha: elmAlpha,
-        early_stopping: earlyStopping,
-        scale_y: scaleY,
-        partials: payload.version.shapes.filter((shape) => !shape.editableZ).map((shape) => ({
-          key: shape.key,
-          categories: shape.categories,
-          editableX: shape.editableX,
-          editableY: shape.editableY,
-        })),
-        locked_features: Object.entries(featureModes)
-          .filter(([, m]) => m === "lock")
-          .map(([k]) => k),
-        feature_modes: featureModes,
-      });
-      // Refit: append new version, keep existing data.
-      applyResponse({ ...refitPayload, source: "service" }, true);
-      if (typeof refitPayload.version.center_shapes === "boolean") {
-        setCenterShapes(refitPayload.version.center_shapes);
-      }
-      if (typeof refitPayload.model.points === "number") {
-        setShapePoints(refitPayload.model.points);
-      }
-      logEvent({
-        category: "model",
-        action: "model.refit_succeeded",
-        detail: {
-          dataset: refitPayload.model.dataset,
-          versionId: refitPayload.version.versionId,
-          lockedFeatures: refitPayload.version.locked_features,
-        },
-      });
-      setStatus("idle");
-    } catch (error) {
-      console.warn("Refit failed.", error);
-      logEvent({
-        category: "model",
-        action: "model.refit_failed",
-        detail: {
-          dataset,
-          versionId: currentVersion.versionId,
-          error: error instanceof Error ? error.message : "Unknown error",
-        },
-      });
-      setStatus("error");
-    }
-  };
-
   // Rebuild editable knot state when a new version arrives.
   useEffect(() => {
     setActivePartialIdx(0);
@@ -575,7 +441,6 @@ export const useGamLab = (options: InitOptions = {}) => {
       next[shape.key] = buildEditableKnots(shape);
     });
     setBaselineKnots(next);
-    // Persist knots for all features so deactivated ones can be recovered.
     currentVersion.shapes.forEach((shape) => {
       if (shape.editableZ) return;
       persistedEditsRef.current[shape.key] = buildEditableKnots(shape);
@@ -591,7 +456,6 @@ export const useGamLab = (options: InitOptions = {}) => {
         versionId: currentVersion.versionId,
         source: currentVersion.source,
         shapeCount: currentVersion.shapes.length,
-        refitFromEdits: currentVersion.refit_from_edits,
       },
     });
   }, [currentVersion, logEvent]);
@@ -944,11 +808,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     return snapshots;
   }, [history, historyCursor, baselineKnots]);
 
-  // Derived locked list for backward compat with ShapeFunctionsPanel.
-  const lockedFeatures = Object.entries(featureModes)
-    .filter(([, m]) => m === "lock")
-    .map(([k]) => k);
-
   return {
     datasets: DATASETS,
     dataset,
@@ -994,9 +853,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     fixedLinesByFeature,
     selectedKnots,
     setSelectedKnots,
-    lockedFeatures,
-    featureModes,
-    setFeatureMode,
     history,
     historyCursor,
     recordAction,
@@ -1007,8 +863,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     metricWarning,
     modelSource,
     train,
-    manualRefitFromEdits,
-    toggleFeatureLock,
     handleSave,
     sidebarTab,
     setSidebarTab,

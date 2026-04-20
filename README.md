@@ -5,6 +5,16 @@ This repository contains two parts:
 - `gam-lab/`: Next.js + React frontend for the GAM lab UI.
 - `trainer-service/`: Python FastAPI service for dataset preprocessing and model training.
 
+## Run Everything In Development
+
+From the repository root:
+
+```bash
+./dev.sh
+```
+
+This starts the trainer service on `http://localhost:4001` and the frontend on `http://localhost:3000`.
+
 ## Frontend (gam-lab)
 
 ```bash
@@ -38,7 +48,7 @@ You need the datasets before running the frontend or backend:
 
 - Core package code now lives under `trainer-service/trainer_service/`:
   - `api.py`: FastAPI routes and app wiring.
-  - `training.py`: training/refit orchestration and shape logic.
+  - `training.py`: training orchestration and shape logic.
   - `preprocessing/`: dataset-specific preprocessing modules.
   - `datasets.py`: dataset download helpers.
   - `generate_models.py`: preset model generation.

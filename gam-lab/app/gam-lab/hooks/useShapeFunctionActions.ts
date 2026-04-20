@@ -43,6 +43,14 @@ export const useShapeFunctionActions = ({
   const catPendingRef = useRef<KnotSet | null>(null);
   const selectionReferenceRef = useRef<{ leftY: number; rightY: number } | null>(null);
   const selectionIdentityRef = useRef<string | null>(null);
+  const latestKnotsRef = useRef(knots);
+  const latestKnotEditsRef = useRef(knotEdits);
+
+  useEffect(() => {
+    latestKnotsRef.current = knots;
+    latestKnotEditsRef.current = knotEdits;
+  }, [knots, knotEdits]);
+
   const getContinuousSelectionContext = (current: KnotSet, selection: number[]) => {
     const sortedSelection = [...selection]
       .filter((idx) => idx >= 0 && idx < current.x.length)
@@ -92,10 +100,18 @@ export const useShapeFunctionActions = ({
   }, [currentContinuousKnots, currentSelectionIdentity, partial, selectedKnots]);
 
   const applyKnotUpdate = (featureKey: string, next: KnotSet) => {
-    const current = knotEdits[featureKey] ?? knots;
+    const current = latestKnotEditsRef.current[featureKey] ?? latestKnotsRef.current;
     if (areKnotsEqual(current, next)) return;
-    setKnots(next);
-    setKnotEdits((prev) => ({ ...prev, [featureKey]: next }));
+
+    latestKnotsRef.current = next;
+    latestKnotEditsRef.current = { ...latestKnotEditsRef.current, [featureKey]: next };
+
+    setKnots((prev) => (areKnotsEqual(prev, next) ? prev : next));
+    setKnotEdits((prev) => {
+      const previous = prev[featureKey];
+      if (previous && areKnotsEqual(previous, next)) return prev;
+      return { ...prev, [featureKey]: next };
+    });
     onCommitEdits(featureKey, next);
   };
 

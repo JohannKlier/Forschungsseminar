@@ -5,7 +5,6 @@ import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "./components/ShapeFunctionsPanel";
 import SidebarPanel from "./components/SidebarPanel";
-import FeatureModePanel from "./components/FeatureModePanel";
 import HelpCallout from "./components/HelpCallout";
 import styles from "./page.module.css";
 import { useGamLab } from "./hooks/useGamLab";
@@ -73,13 +72,8 @@ function GamLabPageContent() {
     activePartialIdx,
     setActivePartialIdx,
     metricWarning,
-    lockedFeatures,
-    featureModes,
-    setFeatureMode,
     handleSave,
     train,
-    manualRefitFromEdits,
-    toggleFeatureLock,
     sidebarTab,
     setSidebarTab,
     partial,
@@ -349,35 +343,6 @@ function GamLabPageContent() {
 
               </section>
             ) : null}
-            {result?.model?.model_type === "igann_interactive" && trainData ? (
-              <section className={styles.panel} style={{ flexShrink: 0 }}>
-                <div className={styles.panelHeader}>
-                  <div className={styles.trainingHeader}>
-                    <div className={styles.trainingTitleBlock}>
-                      <h2 className={styles.panelTitle}>Feature Modes</h2>
-                    </div>
-                    {modelSource === "train" ? (
-                      <div className={styles.trainingActions}>
-                        <button
-                          type="button"
-                          className={styles.panelButton}
-                          onClick={manualRefitFromEdits}
-                          disabled={status === "loading"}
-                        >
-                          {status === "loading" ? "Refitting..." : "Refit from edits"}
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-                <FeatureModePanel
-                  trainData={trainData}
-                  shapes={currentVersion?.shapes ?? []}
-                  featureModes={featureModes}
-                  onSetFeatureMode={setFeatureMode}
-                />
-              </section>
-            ) : null}
             </div>
             <div className={`${styles.tourTarget} ${styles.shapePanelSlot} ${helpTour.isStepActive("shapePanel") ? styles.tourTargetActive : ""}`}>
               <ShapeFunctionsPanel
@@ -394,8 +359,6 @@ function GamLabPageContent() {
                 setSelectedKnots={setSelectedKnots}
                 activePartialIdx={activePartialIdx}
                 setActivePartialIdx={setActivePartialIdx}
-                lockedFeatures={lockedFeatures}
-                onToggleFeatureLock={toggleFeatureLock}
                 onRecordAction={recordAction}
                 onCommitEdits={commitEdits}
                 onUndo={undoLast}
@@ -404,7 +367,6 @@ function GamLabPageContent() {
                 canRedo={historyCursor < history.length}
                 onSave={handleSave}
                 toolSettings={toolSettings}
-                hideLock={modelSource.startsWith("model:")}
               />
               <HelpCallout
                 target="shapePanel"

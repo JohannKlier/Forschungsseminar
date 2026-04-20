@@ -25,9 +25,3 @@ class TrainRequest(BaseModel):
     elm_alpha: float = 1
     early_stopping: int = 50
     scale_y: bool = True
-
-
-class RefitRequest(TrainRequest):
-    partials: List[Dict]
-    locked_features: List[str] = []
-    feature_modes: Dict[str, str] = {}

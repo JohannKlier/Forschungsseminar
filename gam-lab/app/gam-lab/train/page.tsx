@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
 import SidebarPanel from "../components/SidebarPanel";
-import FeatureModePanel from "../components/FeatureModePanel";
 import styles from "../page.module.css";
 import trainStyles from "./train.module.css";
 import { useGamLab } from "../hooks/useGamLab";
@@ -203,8 +202,6 @@ export default function TrainPage() {
     activePartialIdx,
     setActivePartialIdx,
     metricWarning,
-    featureModes,
-    setFeatureMode,
     handleSave,
     train,
     sidebarTab,
@@ -426,21 +423,7 @@ export default function TrainPage() {
                   </p>
                 </div>
               </section>
-            ) : (
-              <section className={`${styles.panel} ${trainStyles.featurePanel}`}>
-                <h2 className={styles.panelTitle}>Edit and deactivate</h2>
-
-                {trainData && (
-                  <FeatureModePanel
-                    trainData={trainData}
-                    shapes={currentVersion?.shapes ?? []}
-                    featureModes={featureModes}
-                    onSetFeatureMode={setFeatureMode}
-                  />
-                )}
-
-              </section>
-            )}
+            ) : null}
           </div>
 
           {!result && (

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, List, Set
+from typing import Dict, List
 
 from fastapi import HTTPException
 from igann import IGANN, IGANN_interactive
@@ -440,170 +440,6 @@ def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, x_train, 
     }
 
 
-def build_feature_dict_from_partials(edited_partials: List[Dict], cat_info: Dict) -> Dict:
-    """Convert frontend partials into the IGANN interactive feature_dict format."""
-    if not edited_partials:
-        return {}
-    updates = {}
-    for partial in edited_partials:
-        key = partial.get("key")
-        if not key:
-            continue
-
-        if key in cat_info:
-            categories = [str(value) for value in (partial.get("categories") or cat_info.get(key) or [])]
-            y_vals = [float(value) for value in (partial.get("editableY") or [])]
-            if categories and len(y_vals) != len(categories):
-                y_vals = (y_vals + [0.0] * len(categories))[: len(categories)]
-            updates[key] = {
-                "datatype": "categorical",
-                "x": categories,
-                "y": y_vals,
-            }
-        else:
-            x_vals = [float(value) for value in (partial.get("editableX") or [])]
-            y_vals = [float(value) for value in (partial.get("editableY") or [])]
-            if not x_vals or not y_vals:
-                continue
-            pair_count = min(len(x_vals), len(y_vals))
-            pairs = sorted(zip(x_vals[:pair_count], y_vals[:pair_count]), key=lambda pair: pair[0])
-            updates[key] = {
-                "datatype": "numerical",
-                "x": [pair[0] for pair in pairs],
-                "y": [pair[1] for pair in pairs],
-            }
-    return updates
-
-
-def merge_learned_shapes_preserve_base_grid(base_shapes: Dict, learned_shapes: Dict, feature_keys: List[str]) -> Dict:
-    """Project learned shapes onto the original edited grid or category order."""
-    merged: Dict = {**base_shapes}
-    for key in feature_keys:
-        learned = learned_shapes.get(key)
-        if not learned:
-            continue
-        base = base_shapes.get(key)
-        if not base:
-            merged[key] = learned
-            continue
-
-        if learned.get("datatype") == "categorical" or base.get("datatype") == "categorical":
-            base_x_values = base.get("x")
-            learned_x_values = learned.get("x")
-            learned_y_values = learned.get("y")
-            base_categories = [str(value) for value in ([] if base_x_values is None else base_x_values)]
-            learned_x = [str(value) for value in ([] if learned_x_values is None else learned_x_values)]
-            learned_y = [float(value) for value in ([] if learned_y_values is None else learned_y_values)]
-            learned_map = {category: learned_y[i] for i, category in enumerate(learned_x) if i < len(learned_y)}
-            base_y_values = base.get("y")
-            base_y = [float(value) for value in ([] if base_y_values is None else base_y_values)]
-            merged[key] = {
-                **base,
-                "datatype": "categorical",
-                "x": base_categories,
-                "y": [learned_map.get(category, base_y[i] if i < len(base_y) else 0.0) for i, category in enumerate(base_categories)],
-            }
-            continue
-
-        base_x = _coerce_numeric_points(base.get("x"))
-        if len(base_x) == 0:
-            merged[key] = learned
-            continue
-        learned_x = _coerce_numeric_points(learned.get("x"))
-        learned_y = _coerce_numeric_points(learned.get("y"))
-        projected = interpolate_numeric(base_x, learned_x, learned_y)
-        merged[key] = {
-            **base,
-            "datatype": "numerical",
-            "x": base_x,
-            "y": projected,
-        }
-    return merged
-
-
-def center_shape_functions_for_data(
-    shape_functions: Dict,
-    feature_keys: List[str],
-    features_train: Dict[str, List],
-    cat_info: Dict,
-) -> tuple[Dict, float]:
-    """Center each feature contribution on empirical training data."""
-    centered = {key: {**value} for key, value in shape_functions.items()}
-    intercept_shift = 0.0
-    for key in feature_keys:
-        shape_fn = centered.get(key)
-        if not shape_fn:
-            continue
-        contribs = evaluate_contribs(shape_fn, features_train.get(key, []), cat_info.get(key))
-        if not contribs:
-            continue
-        mean_value = float(np.mean(np.asarray(contribs, dtype=float)))
-        ys = _coerce_numeric_points(shape_fn.get("y"))
-        if len(ys) == 0:
-            continue
-        shape_fn["y"] = [value - mean_value for value in ys]
-        intercept_shift += mean_value
-    return centered, intercept_shift
-
-
-def linearize_features(
-    feature_dict: Dict,
-    features_to_reinit: List[str],
-    features_train: Dict[str, List],
-    y_train: np.ndarray,
-    cat_info: Dict,
-    num_points: int,
-) -> Dict:
-    """
-    Replace shape functions for reinit features with a joint linear fit on residuals.
-    """
-    from sklearn.linear_model import LinearRegression
-
-    if not features_to_reinit:
-        return feature_dict
-
-    result = {key: dict(value) for key, value in feature_dict.items()}
-
-    kept_keys = [key for key in feature_dict if key not in features_to_reinit]
-    kept_contribs = np.zeros(len(y_train), dtype=float)
-    for key in kept_keys:
-        contribs = np.array(
-            evaluate_contribs(feature_dict[key], features_train.get(key, []), cat_info.get(key)),
-            dtype=float,
-        )
-        if len(contribs) == len(y_train):
-            kept_contribs += contribs
-
-    residuals = y_train - kept_contribs
-
-    reinit_numerical = [key for key in features_to_reinit if key not in cat_info and key in features_train]
-    if reinit_numerical:
-        x_reinit = np.column_stack([np.array(features_train[key], dtype=float) for key in reinit_numerical])
-        linear_model = LinearRegression(fit_intercept=True).fit(x_reinit, residuals)
-        for index, key in enumerate(reinit_numerical):
-            vals = np.array(features_train[key], dtype=float)
-            x_min, x_max = float(vals.min()), float(vals.max())
-            x_points = np.linspace(x_min, x_max, num_points).tolist() if x_min != x_max else [x_min] * num_points
-            y_points = (linear_model.coef_[index] * np.array(x_points)).tolist()
-            result[key] = {"datatype": "numerical", "x": x_points, "y": y_points}
-
-    reinit_categorical = [key for key in features_to_reinit if key in cat_info and key in features_train]
-    for key in reinit_categorical:
-        categories = cat_info.get(key, [])
-        feat_vals = features_train.get(key, [])
-        cat_y: List[float] = []
-        for category in categories:
-            mask = np.array([str(value) == str(category) for value in feat_vals])
-            cat_y.append(float(np.mean(residuals[mask])) if mask.any() else 0.0)
-        result[key] = {
-            "datatype": "categorical",
-            "x": [str(category) for category in categories],
-            "y": cat_y,
-        }
-
-    return result
-
-
 def _load_dataset(request: TrainRequest):
     if request.dataset == "adult_income":
         return preprocess_adult_income(request.seed)
@@ -630,12 +466,7 @@ def _calc_metrics(task_type: str, y_true: np.ndarray, y_pred: np.ndarray) -> Dic
     return {"rmse": rmse_val, "mae": mae_val, "r2": r2_val, "count": int(len(y_true))}
 
 
-def build_train_response(
-    request: TrainRequest,
-    edited_partials: List[Dict] | None = None,
-    locked_features: List[str] | None = None,
-    feature_modes: Dict[str, str] | None = None,
-):
+def build_train_response(request: TrainRequest):
     supported_datasets = {"bike_hourly", "adult_income", "breast_cancer", "mimic4_mean_100_full"}
     if request.dataset not in supported_datasets:
         raise HTTPException(
@@ -690,27 +521,13 @@ def build_train_response(
     y_test = np.array(y_test_arr).astype(float).flatten()
     use_scale_y = bool(request.scale_y) if task_type == "regression" else False
 
-    locked_set: Set[str] = set()
-    deactivate_set: Set[str] = set()
-    if feature_modes:
-        locked_set = {key for key, mode in feature_modes.items() if mode == "lock"}
-        deactivate_set = {key for key, mode in feature_modes.items() if mode == "deactivate"}
-    elif locked_features:
-        locked_set = {str(feature) for feature in locked_features}
-
     operation_specs = _normalize_operation_specs(
         feature_keys,
         request.selected_interactions,
         request.selected_operations,
         labels,
     )
-    active_operation_specs = [
-        spec
-        for spec in operation_specs
-        if spec["key"] not in deactivate_set
-        and spec["sources"][0] not in deactivate_set
-        and spec["sources"][1] not in deactivate_set
-    ]
+    active_operation_specs = operation_specs
 
     interaction_dummy_cols: Dict[str, List[str]] = {}
     all_dummy_keys: List[str] = []
@@ -749,41 +566,7 @@ def build_train_response(
         model_kwargs["GAM_detail"] = num_points
     igann = model_cls(**model_kwargs)
 
-    if edited_partials:
-        if model_type != "igann_interactive":
-            raise HTTPException(
-                status_code=400,
-                detail="Refit from edited shape functions currently requires model_type='igann_interactive'.",
-            )
-        fit_cols = [col for col in feature_keys if col not in locked_set and col not in deactivate_set]
-        fit_cols_all = fit_cols + all_dummy_keys
-        if not fit_cols_all:
-            raise HTTPException(status_code=400, detail="No features left for refit.")
-        use_preserved_partials = bool(locked_set)
-        if use_preserved_partials:
-            feature_dict = build_feature_dict_from_partials(edited_partials, cat_info)
-            for key in list(deactivate_set):
-                feature_dict.pop(key, None)
-
-            reinit_cols = [key for key in feature_keys if key not in locked_set and key not in deactivate_set]
-            reinit_cols_all = reinit_cols + all_dummy_keys
-            if reinit_cols_all:
-                features_for_reinit = {key: x_train_df[key].tolist() for key in feature_keys}
-                features_for_reinit.update({dummy_key: x_train_aug[dummy_key].tolist() for dummy_key in all_dummy_keys})
-                feature_dict = linearize_features(
-                    feature_dict,
-                    reinit_cols_all,
-                    features_for_reinit,
-                    y_train,
-                    cat_info,
-                    num_points,
-                )
-
-            igann.fit_from_shape_functions(x_train_aug[fit_cols_all], y_train, feature_dict)
-        else:
-            igann.fit(x_train_aug[fit_cols_all], y_train)
-    else:
-        igann.fit(x_train_aug, y_train)
+    igann.fit(x_train_aug, y_train)
 
     if center_shapes:
         if model_type != "igann_interactive" or not hasattr(igann, "center_shape_functions"):
@@ -806,30 +589,15 @@ def build_train_response(
             features_test[cat_key] = [str(value) for value in features_test[cat_key]]
     test_len = len(x_test_df)
 
-    if edited_partials and model_type == "igann_interactive" and locked_set:
-        base_shapes = build_feature_dict_from_partials(edited_partials, cat_info)
-        learned_shapes = igann.get_shape_functions_as_dict()
-        shape_functions = merge_learned_shapes_preserve_base_grid(base_shapes, learned_shapes, feature_keys)
-        for dummy_key in all_dummy_keys:
-            if dummy_key in learned_shapes:
-                shape_functions[dummy_key] = learned_shapes[dummy_key]
-        for key in list(deactivate_set):
-            shape_functions.pop(key, None)
-            for dummy_key in interaction_dummy_cols.get(key, []):
-                shape_functions.pop(dummy_key, None)
-    else:
-        shape_functions = igann.get_gam_feature_dict() if getattr(igann, "GAM", None) is not None else igann.get_shape_functions_as_dict()
+    shape_functions = igann.get_gam_feature_dict() if getattr(igann, "GAM", None) is not None else igann.get_shape_functions_as_dict()
     if not shape_functions:
         raise HTTPException(status_code=500, detail="Model did not produce shape functions.")
     all_model_keys = feature_keys + all_dummy_keys
     shape_functions = normalize_numeric_shape_points(shape_functions, all_model_keys, cat_info, num_points)
-    if center_shapes and edited_partials and model_type == "igann_interactive":
-        shape_functions, _ = center_shape_functions_for_data(shape_functions, feature_keys, features_train, cat_info)
-
     def get_shape(key: str) -> Dict:
         return shape_functions.get(key, {})
 
-    active_keys = [key for key in feature_keys if key not in deactivate_set]
+    active_keys = feature_keys
     contribs_train: List[np.ndarray] = []
     contribs_test: List[np.ndarray] = []
     for key in active_keys:
@@ -959,8 +727,6 @@ def build_train_response(
                 )
 
     timestamp = int(time.time() * 1000)
-    is_refit = bool(edited_partials)
-
     return {
         "model": {
             "dataset": request.dataset,
@@ -988,11 +754,8 @@ def build_train_response(
         "version": {
             "versionId": str(timestamp),
             "timestamp": timestamp,
-            "source": "refit" if is_refit else "train",
+            "source": "train",
             "center_shapes": center_shapes,
-            "locked_features": list(locked_set) if feature_modes else [str(feature) for feature in (locked_features or [])],
-            "feature_modes": {str(key): str(value) for key, value in (feature_modes or {}).items()},
-            "refit_from_edits": is_refit,
             "intercept": intercept_val,
             "trainMetrics": train_metrics,
             "testMetrics": test_metrics,

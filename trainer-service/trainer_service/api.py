@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 
 from trainer_service.json_utils import to_jsonable
 from trainer_service.model_store import list_model_names, load_model_payload, normalize_stored_model_payload
-from trainer_service.schemas import RefitRequest, SaveModelRequest, TrainRequest
+from trainer_service.schemas import SaveModelRequest, TrainRequest
 from trainer_service.storage import (
     get_saved_model_payload,
     list_saved_model_names,
@@ -19,17 +19,6 @@ app = FastAPI()
 @app.post("/train")
 def train(request: TrainRequest):
     response = build_train_response(request)
-    return to_jsonable(response)
-
-
-@app.post("/refit")
-def refit(request: RefitRequest):
-    response = build_train_response(
-        request,
-        edited_partials=request.partials,
-        locked_features=request.locked_features,
-        feature_modes=request.feature_modes or None,
-    )
     return to_jsonable(response)
 
 

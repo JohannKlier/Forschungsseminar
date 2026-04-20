@@ -203,66 +203,76 @@ export default function ShapeFunctionsPanel({
 
   if (!partial) return null;
 
+  const shapeLegend = (
+    <div className={styles.shapeLegend} aria-label="Shape function legend">
+      <span className={styles.shapeLegendItem}>
+        <span className={`${styles.shapeLegendSwatch} ${styles.shapeLegendSwatchInitial}`} />
+        Initial
+      </span>
+      <span className={styles.shapeLegendItem}>
+        <span className={`${styles.shapeLegendSwatch} ${styles.shapeLegendSwatchBefore}`} />
+        Previous
+      </span>
+      <span className={styles.shapeLegendItem}>
+        <span className={`${styles.shapeLegendSwatch} ${styles.shapeLegendSwatchCurrent}`} />
+        Current
+      </span>
+    </div>
+  );
+
+  const viewModeToggle = (
+    <div className={styles.panelEyebrowActions}>
+      <div className={`${styles.panelToggle} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
+        {showTourLabels ? (
+          <TourLabel
+            label="View mode"
+            title="Choose the editing lens"
+            description="Switch between focused editing of one shape and a scan across all shapes."
+            details={[
+              "Single view shows the active feature with the full editor and tool panel.",
+              "Grid view helps compare many feature shapes quickly and jump into one with a click.",
+            ]}
+            placement="top-right"
+          />
+        ) : null}
+        <button
+          type="button"
+          className={`${styles.panelToggleButton} ${viewMode === "single" ? styles.panelToggleButtonActive : ""}`}
+          onClick={() => setViewMode("single")}
+        >
+          Single
+        </button>
+        <button
+          type="button"
+          className={`${styles.panelToggleButton} ${viewMode === "grid" ? styles.panelToggleButtonActive : ""}`}
+          onClick={() => setViewMode("grid")}
+        >
+          Grid
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className={`${styles.panel} ${styles.panelFillHeight} ${showTourLabels ? styles.tourFocus : ""}`}>
-      <div className={styles.panelHeader}>
-        <div className={styles.panelEyebrowRow}>
-          <div className={styles.panelEyebrowActions}>
-            <div className={`${styles.panelToggle} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
-              {showTourLabels ? (
-                <TourLabel
-                  label="View mode"
-                  title="Choose the editing lens"
-                  description="Switch between focused editing of one shape and a scan across all shapes."
-                  details={[
-                    "Single view shows the active feature with the full editor and tool panel.",
-                    "Grid view helps compare many feature shapes quickly and jump into one with a click.",
-                  ]}
-                  placement="top-right"
-                />
-              ) : null}
-              <button
-                type="button"
-                className={`${styles.panelToggleButton} ${viewMode === "single" ? styles.panelToggleButtonActive : ""}`}
-                onClick={() => setViewMode("single")}
-              >
-                Single
-              </button>
-              <button
-                type="button"
-                className={`${styles.panelToggleButton} ${viewMode === "grid" ? styles.panelToggleButtonActive : ""}`}
-                onClick={() => setViewMode("grid")}
-              >
-                Grid
-              </button>
+      {viewMode === "grid" ? (
+        <>
+          <div className={styles.panelHeader}>
+            <div className={styles.panelEyebrowRow}>
+              {shapeLegend}
+              {viewModeToggle}
             </div>
           </div>
-        </div>
-      </div>
-      <div className={styles.shapeLegend} aria-label="Shape function legend">
-        <span className={styles.shapeLegendItem}>
-          <span className={`${styles.shapeLegendSwatch} ${styles.shapeLegendSwatchInitial}`} />
-          Initial
-        </span>
-        <span className={styles.shapeLegendItem}>
-          <span className={`${styles.shapeLegendSwatch} ${styles.shapeLegendSwatchBefore}`} />
-          Previous
-        </span>
-        <span className={styles.shapeLegendItem}>
-          <span className={`${styles.shapeLegendSwatch} ${styles.shapeLegendSwatchCurrent}`} />
-          Current
-        </span>
-      </div>
-      {viewMode === "grid" ? (
-        <ShapeFunctionsGridView
-          shapes={shapes}
-          baselineKnots={baselineKnots}
-          knotEdits={knotEdits}
-          onSelectFeature={(idx) => {
-            setActivePartialIdx(idx);
-            setViewMode("single");
-          }}
-        />
+          <ShapeFunctionsGridView
+            shapes={shapes}
+            baselineKnots={baselineKnots}
+            knotEdits={knotEdits}
+            onSelectFeature={(idx) => {
+              setActivePartialIdx(idx);
+              setViewMode("single");
+            }}
+          />
+        </>
       ) : (() => {
         const s = shapes[activePartialIdx];
         if (!s) return null;
@@ -317,51 +327,57 @@ export default function ShapeFunctionsPanel({
         const showContinuousTools = !s.editableZ && !s.categories?.length;
         return (
           <>
-            <div className={`${styles.featureNavCentered} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
-              {showTourLabels ? (
-                <TourLabel
-                  label="Feature selector"
-                  title="Move between features"
-                  description="The selector and arrows change the active feature without leaving the editor."
-                  details={[
-                    "Each option shows whether the feature is continuous or categorical.",
-                    "The I value is the normalized importance score used for quick prioritization.",
-                  ]}
-                  placement="top-left"
-                />
-              ) : null}
-              <button
-                type="button"
-                className={styles.navButtonInline}
-                onClick={() => setActivePartialIdx((prev) => (prev - 1 + shapes.length) % shapes.length)}
-                aria-label="Previous feature"
-              >
-                ‹
-              </button>
-              <select
-                className={styles.featureSelect}
-                value={activePartialIdx}
-                onChange={(event) => setActivePartialIdx(Number(event.target.value))}
-                aria-label="Feature"
-              >
-                {sortedShapeIndices.map((idx) => {
-                  const sf = shapes[idx];
-                  return (
-                    <option key={sf.key} value={idx}>
-                      {sf.label || sf.key || `x${idx + 1}`}
-                      {` — I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}`}
-                    </option>
-                  );
-                })}
-              </select>
-              <button
-                type="button"
-                className={styles.navButtonInline}
-                onClick={() => setActivePartialIdx((prev) => (prev + 1) % shapes.length)}
-                aria-label="Next feature"
-              >
-                ›
-              </button>
+            <div className={styles.panelHeader}>
+              <div className={styles.featureControlRow}>
+                {shapeLegend}
+                <div className={`${styles.featureNavCentered} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
+                  {showTourLabels ? (
+                    <TourLabel
+                      label="Feature selector"
+                      title="Move between features"
+                      description="The selector and arrows change the active feature without leaving the editor."
+                      details={[
+                        "Each option shows whether the feature is continuous or categorical.",
+                        "The I value is the normalized importance score used for quick prioritization.",
+                      ]}
+                      placement="top-left"
+                    />
+                  ) : null}
+                  <button
+                    type="button"
+                    className={styles.navButtonInline}
+                    onClick={() => setActivePartialIdx((prev) => (prev - 1 + shapes.length) % shapes.length)}
+                    aria-label="Previous feature"
+                  >
+                    ‹
+                  </button>
+                  <select
+                    className={styles.featureSelect}
+                    value={activePartialIdx}
+                    onChange={(event) => setActivePartialIdx(Number(event.target.value))}
+                    aria-label="Feature"
+                  >
+                    {sortedShapeIndices.map((idx) => {
+                      const sf = shapes[idx];
+                      return (
+                        <option key={sf.key} value={idx}>
+                          {sf.label || sf.key || `x${idx + 1}`}
+                          {` — I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}`}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <button
+                    type="button"
+                    className={styles.navButtonInline}
+                    onClick={() => setActivePartialIdx((prev) => (prev + 1) % shapes.length)}
+                    aria-label="Next feature"
+                  >
+                    ›
+                  </button>
+                </div>
+                {viewModeToggle}
+              </div>
             </div>
             {featureDescriptions?.[partial.key] ? (
               <p className={styles.featureDescription}>{featureDescriptions[partial.key]}</p>

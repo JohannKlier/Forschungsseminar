@@ -113,8 +113,6 @@ const normalizeLegacyModelPayload = (payload: Record<string, unknown>): TrainRes
       timestamp,
       source: "train",
       center_shapes: typeof payload.center_shapes === "boolean" ? payload.center_shapes : false,
-      locked_features: Array.isArray(payload.locked_features) ? payload.locked_features.map(String) : [],
-      refit_from_edits: false,
       intercept: typeof payload.intercept === "number" ? payload.intercept : 0,
       trainMetrics: (payload.trainMetrics as TrainResponse["version"]["trainMetrics"]) ?? { count: trainY.length },
       testMetrics: (payload.testMetrics as TrainResponse["version"]["testMetrics"]) ?? { count: testY.length },
@@ -140,17 +138,6 @@ export type TrainRequest = {
   scale_y: boolean;
 };
 
-export type RefitRequest = TrainRequest & {
-  partials: Array<{
-    key: string;
-    categories?: string[];
-    editableX?: number[];
-    editableY?: number[];
-  }>;
-  locked_features?: string[];
-  feature_modes?: Record<string, string>;
-};
-
 export const trainModel = async (request: TrainRequest): Promise<TrainResponse> => {
   const response = await fetchWithFallback("/train", {
     method: "POST",
@@ -158,16 +145,6 @@ export const trainModel = async (request: TrainRequest): Promise<TrainResponse> 
     body: JSON.stringify(request),
   });
   if (!response.ok) throw new Error(`Trainer responded with ${response.status}`);
-  return (await response.json()) as TrainResponse;
-};
-
-export const refitModel = async (request: RefitRequest): Promise<TrainResponse> => {
-  const response = await fetchWithFallback("/refit", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(request),
-  });
-  if (!response.ok) throw new Error(`Refit responded with ${response.status}`);
   return (await response.json()) as TrainResponse;
 };
 

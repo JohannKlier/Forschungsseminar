@@ -1,7 +1,5 @@
 export type KnotSet = { x: number[]; y: number[] };
 
-export type FeatureMode = "lock" | "deactivate";
-
 export type FeatureOperation = {
   kind: "interaction";
   operator: "product" | "sum" | "difference" | "ratio" | "absolute_difference";
@@ -28,8 +26,6 @@ export type ShapeFunction = {
 };
 
 // Raw training/test data, separated from model and shape functions.
-// Kept stable across refits of the same dataset+seed so the frontend can
-// recalculate metrics for edited shape functions without re-fetching.
 export type TrainData = {
   trainX: Record<string, number[]>;    // feature key → raw training values (scatter + metric calc)
   trainY: number[];
@@ -57,16 +53,12 @@ export type ModelInfo = {
   points: number;
 };
 
-// One versioned snapshot of shape functions produced by a single train or refit call.
-// Each retraining appends a new version; the frontend accumulates them.
+// One versioned snapshot of shape functions produced by a training call.
 export type ShapeFunctionVersion = {
   versionId: string;        // timestamp-based unique id
   timestamp: number;        // ms since epoch
-  source: "train" | "refit";
+  source: "train";
   center_shapes: boolean;
-  locked_features: string[];
-  feature_modes?: Record<string, FeatureMode>;
-  refit_from_edits: boolean;
   intercept: number;
   trainMetrics: MetricSummary;
   testMetrics: MetricSummary;
@@ -108,7 +100,7 @@ export type StatItem =
   | { label: string; kind: "value"; value: string }
   // initial  = server metrics from the very first train (never changes)
   // last     = server metrics from the version just before the current one
-  // latest   = server metrics from the most recent train/refit
+  // latest   = server metrics from the most recent train
   // current  = live frontend metrics recalculated from edited shape functions
   | { label: string; kind: "bar"; initial: number | null; last: number | null; latest: number | null; current: number | null; lowerIsBetter?: boolean; format?: string };
 
