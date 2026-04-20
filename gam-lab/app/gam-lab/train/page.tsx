@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
 import SidebarPanel from "../components/SidebarPanel";
+import FeatureMiniHistogram from "../components/FeatureMiniHistogram";
 import styles from "../page.module.css";
 import trainStyles from "./train.module.css";
 import { useGamLab } from "../hooks/useGamLab";
@@ -12,7 +13,6 @@ import { useSidebarActions } from "../hooks/useSidebarActions";
 import { useToolSettings } from "../hooks/useToolSettings";
 import { useAuditLogger } from "../hooks/useAuditLogger";
 import { useUiAuditLogger } from "../hooks/useUiAuditLogger";
-import { suggestInteractionOperations } from "../lib/interactionSuggestions";
 
 type FeatureCatalogEntry = {
   key: string;
@@ -20,9 +20,33 @@ type FeatureCatalogEntry = {
   kind: "continuous" | "categorical";
 };
 
+type FeatureSummary =
+  | {
+      key: string;
+      label: string;
+      kind: "continuous";
+      bins: number[];
+      min: number | null;
+      max: number | null;
+    }
+  | {
+      key: string;
+      label: string;
+      kind: "categorical";
+      categories: { label: string; count: number }[];
+    };
+
 const EMPTY_FEATURES: FeatureCatalogEntry[] = [];
 
 const FEATURE_DESCRIPTIONS: Record<string, Record<string, string>> = {
+  bike_hourly: {
+    "Time of Day": "Hour of the day when rentals were counted.",
+    "Windspeed": "Normalized wind speed converted to an estimated km/h scale.",
+    "Temperature": "Air temperature converted to an estimated Celsius scale.",
+    "Humidity": "Relative humidity on a 0 to 100 scale.",
+    "Weathersituation": "Observed weather condition, from clear to rain.",
+    "Type of Day": "Whether the observation falls on a working day, weekend, or holiday.",
+  },
   mimic4_mean_100_full: {
     "LOS": "Length of ICU stay in days.",
     "Age": "Patient age at ICU admission.",
@@ -69,54 +93,6 @@ const FEATURE_CATALOG: Record<string, FeatureCatalogEntry[]> = {
     { key: "Humidity", label: "Humidity", kind: "continuous" },
     { key: "Weathersituation", label: "Weathersituation", kind: "categorical" },
     { key: "Type of Day", label: "Type of Day", kind: "categorical" },
-  ],
-  adult_income: [
-    { key: "age", label: "age", kind: "continuous" },
-    { key: "fnlwgt", label: "fnlwgt", kind: "continuous" },
-    { key: "education-num", label: "education-num", kind: "continuous" },
-    { key: "capital-gain", label: "capital-gain", kind: "continuous" },
-    { key: "capital-loss", label: "capital-loss", kind: "continuous" },
-    { key: "hours-per-week", label: "hours-per-week", kind: "continuous" },
-    { key: "workclass", label: "workclass", kind: "categorical" },
-    { key: "education", label: "education", kind: "categorical" },
-    { key: "marital-status", label: "marital-status", kind: "categorical" },
-    { key: "occupation", label: "occupation", kind: "categorical" },
-    { key: "relationship", label: "relationship", kind: "categorical" },
-    { key: "race", label: "race", kind: "categorical" },
-    { key: "sex", label: "sex", kind: "categorical" },
-    { key: "native-country", label: "native-country", kind: "categorical" },
-  ],
-  breast_cancer: [
-    { key: "radius_mean", label: "radius_mean", kind: "continuous" },
-    { key: "texture_mean", label: "texture_mean", kind: "continuous" },
-    { key: "perimeter_mean", label: "perimeter_mean", kind: "continuous" },
-    { key: "area_mean", label: "area_mean", kind: "continuous" },
-    { key: "smoothness_mean", label: "smoothness_mean", kind: "continuous" },
-    { key: "compactness_mean", label: "compactness_mean", kind: "continuous" },
-    { key: "concavity_mean", label: "concavity_mean", kind: "continuous" },
-    { key: "concave points_mean", label: "concave points_mean", kind: "continuous" },
-    { key: "symmetry_mean", label: "symmetry_mean", kind: "continuous" },
-    { key: "fractal_dimension_mean", label: "fractal_dimension_mean", kind: "continuous" },
-    { key: "radius_se", label: "radius_se", kind: "continuous" },
-    { key: "texture_se", label: "texture_se", kind: "continuous" },
-    { key: "perimeter_se", label: "perimeter_se", kind: "continuous" },
-    { key: "area_se", label: "area_se", kind: "continuous" },
-    { key: "smoothness_se", label: "smoothness_se", kind: "continuous" },
-    { key: "compactness_se", label: "compactness_se", kind: "continuous" },
-    { key: "concavity_se", label: "concavity_se", kind: "continuous" },
-    { key: "concave points_se", label: "concave points_se", kind: "continuous" },
-    { key: "symmetry_se", label: "symmetry_se", kind: "continuous" },
-    { key: "fractal_dimension_se", label: "fractal_dimension_se", kind: "continuous" },
-    { key: "radius_worst", label: "radius_worst", kind: "continuous" },
-    { key: "texture_worst", label: "texture_worst", kind: "continuous" },
-    { key: "perimeter_worst", label: "perimeter_worst", kind: "continuous" },
-    { key: "area_worst", label: "area_worst", kind: "continuous" },
-    { key: "smoothness_worst", label: "smoothness_worst", kind: "continuous" },
-    { key: "compactness_worst", label: "compactness_worst", kind: "continuous" },
-    { key: "concavity_worst", label: "concavity_worst", kind: "continuous" },
-    { key: "concave points_worst", label: "concave points_worst", kind: "continuous" },
-    { key: "symmetry_worst", label: "symmetry_worst", kind: "continuous" },
-    { key: "fractal_dimension_worst", label: "fractal_dimension_worst", kind: "continuous" },
   ],
   mimic4_mean_100_full: [
     { key: "LOS", label: "LOS", kind: "continuous" },
@@ -165,7 +141,6 @@ export default function TrainPage() {
   const {
     status,
     result,
-    models,
     datasets,
     dataset,
     setDataset,
@@ -233,9 +208,38 @@ export default function TrainPage() {
   const toolSettings = useToolSettings();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [activeTab, setActiveTab] = useState<"shapes" | "features">("shapes");
+  const [featureSummaryState, setFeatureSummaryState] = useState<{
+    dataset: string;
+    summaries: Record<string, FeatureSummary>;
+  } | null>(null);
 
   const availableFeatures = FEATURE_CATALOG[dataset] ?? EMPTY_FEATURES;
   const featureKeys = useMemo(() => availableFeatures.map((feature) => feature.key), [availableFeatures]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFeatureSummaries = async () => {
+      try {
+        const response = await fetch(`/api/datasets/${encodeURIComponent(dataset)}/features?seed=${encodeURIComponent(String(seed))}`);
+        if (!response.ok) return;
+        const payload = (await response.json()) as { features?: FeatureSummary[] };
+        if (cancelled) return;
+        const summaries = Object.fromEntries((payload.features ?? []).map((feature) => [feature.key, feature]));
+        setFeatureSummaryState({ dataset, summaries });
+      } catch (error) {
+        console.warn("Failed to load dataset feature summaries.", error);
+      }
+    };
+
+    void loadFeatureSummaries();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataset, seed]);
+
+  const featureSummaries = featureSummaryState?.dataset === dataset ? featureSummaryState.summaries : {};
 
   useEffect(() => {
     setSelectedFeatures((prev) => {
@@ -280,15 +284,43 @@ export default function TrainPage() {
     });
   };
 
-  const applySuggestedOperations = () => {
-    if (!models?.residuals || !trainData) return;
-    const suggestions = suggestInteractionOperations({
-      residuals: models.residuals,
-      trainData,
-      selectedFeatures,
-    });
-    setSelectedInteractions(suggestions.map((operation) => operation.sources.join("__")));
-    setSelectedOperations(suggestions);
+  const renderFeatureDistribution = (summary: FeatureSummary | undefined) => {
+    if (!summary) {
+      return <span className={trainStyles.featureDistributionPlaceholder} />;
+    }
+
+    if (summary.kind === "categorical") {
+      const maxCount = Math.max(...summary.categories.map((category) => category.count), 1);
+      return (
+        <div className={trainStyles.featureOptionBars} aria-hidden="true">
+          {summary.categories.map((category) => (
+            <span
+              key={category.label}
+              className={trainStyles.featureOptionBarGroup}
+              title={`${category.label}: ${category.count}`}
+            >
+              <span
+                className={trainStyles.featureOptionBar}
+                style={{ height: `${Math.max(6, (category.count / maxCount) * 100)}%` }}
+              />
+            </span>
+          ))}
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={trainStyles.featureOptionHistogram}
+        title={
+          summary.min != null && summary.max != null
+            ? `${summary.min.toFixed(2)} to ${summary.max.toFixed(2)}`
+            : undefined
+        }
+      >
+        <FeatureMiniHistogram bins={summary.bins} />
+      </div>
+    );
   };
 
   return (
@@ -328,9 +360,12 @@ export default function TrainPage() {
             </div>
           ) : null}
 
-          <div className={styles.topPanels} style={result && activeTab === "shapes" ? { display: "none" } : undefined}>
+          <div
+            className={`${styles.topPanels} ${!result ? trainStyles.preTrainTopPanels : ""}`}
+            style={result && activeTab === "shapes" ? { display: "none" } : undefined}
+          >
             {!result ? (
-              <section className={styles.panel}>
+              <section className={`${styles.panel} ${trainStyles.preTrainFeaturePanel}`}>
                 <h2 className={styles.panelTitle}>Select features, then train</h2>
 
                 <div className={trainStyles.field} style={{ marginBottom: "0.75rem" }}>
@@ -380,6 +415,7 @@ export default function TrainPage() {
                         <div className={trainStyles.featureChecklist}>
                           {featureSelection[columnIdx].map((feature) => {
                             const desc = FEATURE_DESCRIPTIONS[dataset]?.[feature.key];
+                            const summary = featureSummaries[feature.key];
                             return (
                               <label key={feature.key} className={trainStyles.featureOption}>
                                 <input
@@ -389,8 +425,9 @@ export default function TrainPage() {
                                 />
                                 <span className={trainStyles.featureOptionContent}>
                                   <span className={trainStyles.featureOptionLabel}>{feature.label}</span>
-                                  {desc && <span className={trainStyles.featureOptionDesc}>{desc}</span>}
+                                  <span className={trainStyles.featureOptionDesc}>{desc ?? "No description available."}</span>
                                 </span>
+                                {renderFeatureDistribution(summary)}
                               </label>
                             );
                           })}

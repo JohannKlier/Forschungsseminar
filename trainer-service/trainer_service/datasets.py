@@ -10,7 +10,6 @@ from trainer_service.paths import DATA_DIR
 
 DATASETS = {
     "bike.csv": "1FhiamQAkPqF0OH8vYfxoo98VLTbxHFjy",
-    "breastCancer.csv": "13Aii5N4gVzL3vd3seNeww-8BQjVDg_69",
 }
 
 

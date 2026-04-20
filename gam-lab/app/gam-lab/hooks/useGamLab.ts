@@ -7,12 +7,6 @@ import { type AuditLogFn } from "../lib/audit";
 // Dataset registry used by the UI selectors and training requests.
 const DATASETS: DatasetOption[] = [
   { id: "bike_hourly", label: "Bike sharing (hourly)", summary: "Hourly rentals with weather/seasonality." },
-  { id: "adult_income", label: "Adult income", summary: "Census income classification (<=50K vs >50K)." },
-  {
-    id: "breast_cancer",
-    label: "Breast cancer (Wisconsin)",
-    summary: "Diagnostic features for malignant vs benign tumors.",
-  },
   {
     id: "mimic4_mean_100_full",
     label: "MIMIC-IV mortality",
@@ -93,7 +87,7 @@ const noopAuditLog: AuditLogFn = () => {};
 export const useGamLab = (options: InitOptions = {}) => {
   const logEvent = options.auditLogger ?? noopAuditLog;
   // User-configurable training inputs.
-  const [dataset, setDataset] = useState(DATASETS[3].id);
+  const [dataset, setDataset] = useState(DATASETS[1].id);
   const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann_interactive");
   const [centerShapes, setCenterShapes] = useState(false);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);

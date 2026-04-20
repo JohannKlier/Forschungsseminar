@@ -22,7 +22,7 @@ def main() -> None:
         "early_stopping": 50,
         "scale_y": True,
     }
-    datasets = ["bike_hourly", "breast_cancer"]
+    datasets = ["bike_hourly", "mimic4_mean_100_full"]
     for dataset in datasets:
         request = TrainRequest(dataset=dataset, **training_preset)
         payload = to_jsonable(build_train_response(request))

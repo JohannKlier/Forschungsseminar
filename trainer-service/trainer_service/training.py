@@ -10,9 +10,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 
 from trainer_service.preprocessing import (
-    preprocess_adult_income,
     preprocess_bike_hourly,
-    preprocess_breast_cancer,
     preprocess_mimic4_mean_100_full,
 )
 from trainer_service.schemas import TrainRequest
@@ -441,13 +439,59 @@ def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, x_train, 
 
 
 def _load_dataset(request: TrainRequest):
-    if request.dataset == "adult_income":
-        return preprocess_adult_income(request.seed)
-    if request.dataset == "breast_cancer":
-        return preprocess_breast_cancer()
     if request.dataset == "mimic4_mean_100_full":
         return preprocess_mimic4_mean_100_full(request.seed)
     return preprocess_bike_hourly(request.seed)
+
+
+def build_dataset_feature_summary(dataset: str, seed: int = 3) -> Dict:
+    supported_datasets = {"bike_hourly", "mimic4_mean_100_full"}
+    if dataset not in supported_datasets:
+        raise HTTPException(
+            status_code=400,
+            detail="Only bike_hourly and mimic4_mean_100_full are supported.",
+        )
+
+    request = TrainRequest(dataset=dataset, seed=seed)
+    x_processed, _y_full, cat_info, labels = _load_dataset(request)
+    features = []
+
+    for key in x_processed.columns:
+        label = labels.get(key, key)
+        if key in cat_info:
+            counts = x_processed[key].astype(str).value_counts(dropna=False).to_dict()
+            categories = [
+                {"label": category, "count": int(counts.get(str(category), 0))}
+                for category in cat_info[key]
+            ]
+            features.append({
+                "key": key,
+                "label": label,
+                "kind": "categorical",
+                "categories": categories,
+            })
+            continue
+
+        values = pd.to_numeric(x_processed[key], errors="coerce").dropna().to_numpy(dtype=float)
+        if len(values) == 0:
+            bins = []
+            min_value = None
+            max_value = None
+        else:
+            counts, edges = np.histogram(values, bins=min(24, max(8, int(np.sqrt(len(values))))))
+            bins = [int(count) for count in counts.tolist()]
+            min_value = float(edges[0])
+            max_value = float(edges[-1])
+        features.append({
+            "key": key,
+            "label": label,
+            "kind": "continuous",
+            "bins": bins,
+            "min": min_value,
+            "max": max_value,
+        })
+
+    return {"dataset": dataset, "features": features}
 
 
 def _calc_metrics(task_type: str, y_true: np.ndarray, y_pred: np.ndarray) -> Dict:
@@ -467,11 +511,11 @@ def _calc_metrics(task_type: str, y_true: np.ndarray, y_pred: np.ndarray) -> Dic
 
 
 def build_train_response(request: TrainRequest):
-    supported_datasets = {"bike_hourly", "adult_income", "breast_cancer", "mimic4_mean_100_full"}
+    supported_datasets = {"bike_hourly", "mimic4_mean_100_full"}
     if request.dataset not in supported_datasets:
         raise HTTPException(
             status_code=400,
-            detail="Only bike_hourly, adult_income, breast_cancer, and mimic4_mean_100_full are supported.",
+            detail="Only bike_hourly and mimic4_mean_100_full are supported.",
         )
     model_type = request.model_type if request.model_type in {"igann", "igann_interactive"} else "igann_interactive"
     center_shapes = bool(getattr(request, "center_shapes", False))
@@ -483,7 +527,7 @@ def build_train_response(request: TrainRequest):
     elm_alpha = max(0.01, min(10.0, request.elm_alpha))
     early_stopping = max(5, min(200, request.early_stopping))
 
-    classification_datasets = {"adult_income", "breast_cancer", "mimic4_mean_100_full"}
+    classification_datasets = {"mimic4_mean_100_full"}
     task_type = "classification" if request.dataset in classification_datasets else "regression"
     igann_task = "regression" if request.dataset in classification_datasets else task_type
 

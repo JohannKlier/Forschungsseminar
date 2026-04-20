@@ -10,7 +10,7 @@ from trainer_service.storage import (
     list_saved_model_names,
     save_saved_model_payload,
 )
-from trainer_service.training import build_train_response
+from trainer_service.training import build_dataset_feature_summary, build_train_response
 
 
 app = FastAPI()
@@ -30,6 +30,11 @@ def list_models():
 @app.get("/models/{name}")
 def get_model(name: str):
     return load_model_payload(name)
+
+
+@app.get("/datasets/{dataset}/features")
+def get_dataset_features(dataset: str, seed: int = 3):
+    return to_jsonable(build_dataset_feature_summary(dataset, seed))
 
 
 @app.get("/saved-models")

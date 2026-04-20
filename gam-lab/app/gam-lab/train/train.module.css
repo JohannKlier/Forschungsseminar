@@ -273,12 +273,28 @@
   margin-top: 0.5rem;
 }
 
+.preTrainTopPanels {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.preTrainFeaturePanel {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .featureSelectionCard {
   border: 1px solid #e2e8f0;
   border-radius: 0.8rem;
   background: #f8fafc;
   padding: 0.95rem;
   margin-bottom: 0.9rem;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .featureSelectionHeader {
@@ -321,10 +337,15 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.9rem;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .featureColumn {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .featureColumnTitle {
@@ -340,8 +361,9 @@
 .featureChecklist {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
-  max-height: 14rem;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding-right: 0.3rem;
   scrollbar-width: thin;
@@ -396,13 +418,14 @@
 }
 
 .featureOption {
-  display: flex;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr) minmax(120px, 180px);
   align-items: center;
   gap: 0.5rem;
-  padding: 0.38rem 0.55rem;
+  padding: 0.55rem 0.65rem;
   border-radius: 0.5rem;
-  background: transparent;
-  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(226, 232, 240, 0.9);
   color: #64748b;
   font-size: 0.84rem;
   cursor: pointer;
@@ -473,14 +496,59 @@
 .featureOptionDesc {
   font-size: 0.72rem;
   color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1.25;
 }
 
 .featureOption:has(input:checked) .featureOptionDesc {
   color: #64748b;
+}
+
+.featureOptionHistogram {
+  height: 42px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 0.35rem;
+  background: rgba(241, 245, 249, 0.72);
+  border: 1px solid rgba(203, 213, 225, 0.62);
+}
+
+.featureOptionBars {
+  height: 42px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px;
+  border-radius: 0.35rem;
+  background: rgba(241, 245, 249, 0.72);
+  border: 1px solid rgba(203, 213, 225, 0.62);
+}
+
+.featureOptionBarGroup {
+  flex: 1 1 0;
+  min-width: 3px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+
+.featureOptionBar {
+  width: 100%;
+  border-radius: 2px 2px 0 0;
+  background: rgba(149, 184, 220, 0.72);
+}
+
+.featureDistributionPlaceholder {
+  height: 42px;
+  border-radius: 0.35rem;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(226, 232, 240, 0.68),
+    rgba(226, 232, 240, 0.68) 6px,
+    rgba(241, 245, 249, 0.55) 6px,
+    rgba(241, 245, 249, 0.55) 12px
+  );
 }
 
 .emptyStateNote {
@@ -532,6 +600,16 @@
 @media (max-width: 720px) {
   .featureColumns {
     grid-template-columns: 1fr;
+  }
+
+  .featureOption {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+
+  .featureOptionHistogram,
+  .featureOptionBars,
+  .featureDistributionPlaceholder {
+    grid-column: 2;
   }
 
   .featureSelectionHeader,
