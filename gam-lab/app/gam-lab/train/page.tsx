@@ -207,7 +207,6 @@ export default function TrainPage() {
   const { formatHistoryAction, formatHistoryDetail } = useSidebarActions({ history });
   const toolSettings = useToolSettings();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [activeTab, setActiveTab] = useState<"shapes" | "features">("shapes");
   const [featureSummaryState, setFeatureSummaryState] = useState<{
     dataset: string;
     summaries: Record<string, FeatureSummary>;
@@ -286,39 +285,40 @@ export default function TrainPage() {
 
   const renderFeatureDistribution = (summary: FeatureSummary | undefined) => {
     if (!summary) {
-      return <span className={trainStyles.featureDistributionPlaceholder} />;
+      return <span className={trainStyles.featureDistributionPlaceholder} aria-hidden="true" />;
     }
 
     if (summary.kind === "categorical") {
-      const maxCount = Math.max(...summary.categories.map((category) => category.count), 1);
+      const maxCount = Math.max(...summary.categories.map((c) => c.count), 1);
       return (
-        <div className={trainStyles.featureOptionBars} aria-hidden="true">
+        <div className={trainStyles.featureCatBlock} aria-hidden="true">
           {summary.categories.map((category) => (
-            <span
-              key={category.label}
-              className={trainStyles.featureOptionBarGroup}
-              title={`${category.label}: ${category.count}`}
-            >
-              <span
-                className={trainStyles.featureOptionBar}
-                style={{ height: `${Math.max(6, (category.count / maxCount) * 100)}%` }}
-              />
-            </span>
+            <div key={category.label} className={trainStyles.featureCatCol}>
+              <div className={trainStyles.featureCatBarArea}>
+                <div
+                  className={trainStyles.featureCatBar}
+                  style={{ height: `${Math.max(5, (category.count / maxCount) * 100)}%` }}
+                  title={`${category.label}: ${category.count}`}
+                />
+              </div>
+              <span className={trainStyles.featureCatLabel}>{category.label}</span>
+            </div>
           ))}
         </div>
       );
     }
 
     return (
-      <div
-        className={trainStyles.featureOptionHistogram}
-        title={
-          summary.min != null && summary.max != null
-            ? `${summary.min.toFixed(2)} to ${summary.max.toFixed(2)}`
-            : undefined
-        }
-      >
-        <FeatureMiniHistogram bins={summary.bins} />
+      <div className={trainStyles.featureHistogramBlock} aria-hidden="true">
+        <div className={trainStyles.featureOptionHistogram}>
+          <FeatureMiniHistogram bins={summary.bins} />
+        </div>
+        {summary.min != null && summary.max != null && (
+          <div className={trainStyles.featureHistogramRange}>
+            <span>{summary.min.toFixed(1)}</span>
+            <span>{summary.max.toFixed(1)}</span>
+          </div>
+        )}
       </div>
     );
   };
@@ -334,35 +334,15 @@ export default function TrainPage() {
                 <p className={styles.datasetTitle}>{selectedDataset.label}</p>
                 <p className={styles.datasetSummary}>{selectedDataset.summary}</p>
               </div>
-              <div className={trainStyles.bannerRight}>
-                <div className={trainStyles.tabBar} role="tablist">
-                  <button
-                    role="tab"
-                    aria-selected={activeTab === "shapes"}
-                    className={`${trainStyles.tabButton} ${activeTab === "shapes" ? trainStyles.tabButtonActive : ""}`}
-                    onClick={() => setActiveTab("shapes")}
-                  >
-                    Shapes
-                  </button>
-                  <button
-                    role="tab"
-                    aria-selected={activeTab === "features"}
-                    className={`${trainStyles.tabButton} ${activeTab === "features" ? trainStyles.tabButtonActive : ""}`}
-                    onClick={() => setActiveTab("features")}
-                  >
-                    Features
-                  </button>
-                </div>
-                <Link className={styles.selectModelButton} href="/">
-                  Choose another model
-                </Link>
-              </div>
+              <Link className={styles.selectModelButton} href="/">
+                Choose another model
+              </Link>
             </div>
           ) : null}
 
           <div
             className={`${styles.topPanels} ${!result ? trainStyles.preTrainTopPanels : ""}`}
-            style={result && activeTab === "shapes" ? { display: "none" } : undefined}
+            style={result ? { display: "none" } : undefined}
           >
             {!result ? (
               <section className={`${styles.panel} ${trainStyles.preTrainFeaturePanel}`}>
@@ -418,15 +398,15 @@ export default function TrainPage() {
                             const summary = featureSummaries[feature.key];
                             return (
                               <label key={feature.key} className={trainStyles.featureOption}>
-                                <input
-                                  type="checkbox"
-                                  checked={feature.checked}
-                                  onChange={(event) => togglePretrainFeature(feature.key, event.target.checked)}
-                                />
-                                <span className={trainStyles.featureOptionContent}>
+                                <span className={trainStyles.featureOptionTop}>
+                                  <input
+                                    type="checkbox"
+                                    checked={feature.checked}
+                                    onChange={(event) => togglePretrainFeature(feature.key, event.target.checked)}
+                                  />
                                   <span className={trainStyles.featureOptionLabel}>{feature.label}</span>
-                                  <span className={trainStyles.featureOptionDesc}>{desc ?? "No description available."}</span>
                                 </span>
+                                {desc && <span className={trainStyles.featureOptionDesc}>{desc}</span>}
                                 {renderFeatureDistribution(summary)}
                               </label>
                             );
@@ -452,12 +432,8 @@ export default function TrainPage() {
                     }}
                     disabled={status === "loading" || selectedFeatures.length === 0}
                   >
-                    {status === "loading" ? "Training…" : "Train selected features"}
+                    {status === "loading" ? "Training…" : "Train"}
                   </button>
-                  <p className={trainStyles.actionHint}>
-                    The initial model is trained only on the selected features. Interaction suggestions remain
-                    available later during refinement.
-                  </p>
                 </div>
               </section>
             ) : null}
@@ -527,7 +503,7 @@ export default function TrainPage() {
             </aside>
           )}
 
-          {result && activeTab === "shapes" ? (
+          {result ? (
             <div className={styles.shapePanelSlot}>
               <ShapeFunctionsPanel
                 shapes={result.version.shapes}

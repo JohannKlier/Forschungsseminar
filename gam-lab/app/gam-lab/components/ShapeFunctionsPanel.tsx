@@ -263,15 +263,18 @@ export default function ShapeFunctionsPanel({
               {viewModeToggle}
             </div>
           </div>
-          <ShapeFunctionsGridView
-            shapes={shapes}
-            baselineKnots={baselineKnots}
-            knotEdits={knotEdits}
-            onSelectFeature={(idx) => {
-              setActivePartialIdx(idx);
-              setViewMode("single");
-            }}
-          />
+          <div className={styles.gridViewScroll}>
+            <ShapeFunctionsGridView
+              shapes={shapes}
+              baselineKnots={baselineKnots}
+              knotEdits={knotEdits}
+              onSelectFeature={(idx) => {
+                setActivePartialIdx(idx);
+                setViewMode("single");
+              }}
+              featureImportance={featureImportance.normalizedByKey}
+            />
+          </div>
         </>
       ) : (() => {
         const s = shapes[activePartialIdx];

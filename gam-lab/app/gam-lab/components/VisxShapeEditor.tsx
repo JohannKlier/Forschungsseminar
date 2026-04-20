@@ -1113,6 +1113,13 @@ export default function VisxShapeEditor({
             .selectAll<SVGCircleElement, any>("circle.knot")
             .attr("cx", (d: any) => zx(d.x))
             .attr("cy", (d: any) => zy(d.y));
+          content
+            .selectAll<SVGRectElement, any>("rect.knot-hitbox")
+            .attr("x", (d: any) => zx(d.x) - HIT_SIZE / 2)
+            .attr("y", (d: any) => zy(d.y) - HIT_SIZE / 2);
+          xScaleRef.current = zx;
+          yScaleRef.current = zy;
+          lineGenRef.current = lineGenZoom;
         });
       svg.call(zoomBehavior as any);
       svg.call(zoomBehavior.transform as any, zoomRef.current ?? zoomIdentity);
