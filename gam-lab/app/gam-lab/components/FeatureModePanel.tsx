@@ -121,7 +121,6 @@ export default function FeatureModePanel({ trainData, shapes, featureModes, onSe
   const renderRegularKey = (key: string) => {
     const label = trainData.featureLabels[key] ?? key;
     const mode = featureModes[key];
-    const isLocked = mode === "lock";
     const isDeactivated = mode === "deactivate";
     const importance = importanceByKey[key] ?? 0;
     const hist = histByKey[key];
@@ -134,17 +133,6 @@ export default function FeatureModePanel({ trainData, shapes, featureModes, onSe
           {importance.toFixed(3)}
         </span>
         <div className={styles.featureModeControls}>
-          <label className={styles.featureModeLockLabel} title="Lock: freeze shape, skip boosting">
-            <input
-              type="checkbox"
-              className={styles.featureModeLockInput}
-              checked={isLocked}
-              disabled={isDeactivated}
-              onChange={(e) => onSetFeatureMode(key, e.target.checked ? "lock" : undefined)}
-            />
-            <span className={styles.featureModeLockTrack}><span className={styles.featureModeLockThumb} /></span>
-            <span className={styles.featureModeLockText}>Lock</span>
-          </label>
           <label className={styles.featureModeDeactivateLabel} title="Off: remove from model entirely">
             <input
               type="checkbox"

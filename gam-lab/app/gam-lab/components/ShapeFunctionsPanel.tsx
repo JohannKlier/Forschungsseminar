@@ -38,8 +38,6 @@ type Props = {
   setSelectedKnots: Dispatch<SetStateAction<number[]>>;
   activePartialIdx: number;
   setActivePartialIdx: Dispatch<SetStateAction<number>>;
-  lockedFeatures: string[];
-  onToggleFeatureLock: (featureKey: string) => void;
   onRecordAction: (featureKey: string, before: KnotSet, after: KnotSet, action?: string) => void;
   onCommitEdits: (featureKey: string, next: KnotSet) => void;
   onUndo: () => void;
@@ -50,7 +48,6 @@ type Props = {
   onInteractionStart?: () => void;
   onInteractionEnd?: () => void;
   toolSettings: ToolSettings;
-  hideLock?: boolean;
 };
 
 export default function ShapeFunctionsPanel({
@@ -68,8 +65,6 @@ export default function ShapeFunctionsPanel({
   setSelectedKnots,
   activePartialIdx,
   setActivePartialIdx,
-  lockedFeatures,
-  onToggleFeatureLock,
   onRecordAction,
   onCommitEdits,
   onUndo,
@@ -80,7 +75,6 @@ export default function ShapeFunctionsPanel({
   onInteractionStart,
   onInteractionEnd,
   toolSettings,
-  hideLock = false,
 }: Props) {
   const {
     activeContinuousTool, setActiveContinuousTool,
@@ -208,24 +202,12 @@ export default function ShapeFunctionsPanel({
   });
 
   if (!partial) return null;
-  const activeFeatureLocked = lockedFeatures.includes(partial.key);
 
   return (
     <div className={`${styles.panel} ${styles.panelFillHeight} ${showTourLabels ? styles.tourFocus : ""}`}>
       <div className={styles.panelHeader}>
         <div className={styles.panelEyebrowRow}>
-          <p className={styles.panelEyebrow}>Shape functions</p>
           <div className={styles.panelEyebrowActions}>
-            {viewMode === "single" && !hideLock ? (
-              <button
-                className={`${styles.panelToggleButton} ${styles.lockButton} ${activeFeatureLocked ? styles.panelToggleButtonActive : ""}`}
-                type="button"
-                onClick={() => onToggleFeatureLock(partial.key)}
-                aria-label={activeFeatureLocked ? "Unlock feature" : "Lock feature"}
-              >
-                {activeFeatureLocked ? "🔒" : "🔓"}
-              </button>
-            ) : null}
             <div className={`${styles.panelToggle} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
               {showTourLabels ? (
                 <TourLabel

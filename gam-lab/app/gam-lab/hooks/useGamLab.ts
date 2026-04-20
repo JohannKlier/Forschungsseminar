@@ -93,7 +93,7 @@ const noopAuditLog: AuditLogFn = () => {};
 export const useGamLab = (options: InitOptions = {}) => {
   const logEvent = options.auditLogger ?? noopAuditLog;
   // User-configurable training inputs.
-  const [dataset, setDataset] = useState(DATASETS[0].id);
+  const [dataset, setDataset] = useState(DATASETS[3].id);
   const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann_interactive");
   const [centerShapes, setCenterShapes] = useState(false);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);

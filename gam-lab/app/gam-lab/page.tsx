@@ -170,7 +170,6 @@ function GamLabPageContent() {
                 <div className={styles.panelHeader}>
                   <div className={styles.trainingHeader}>
                     <div className={styles.trainingTitleBlock}>
-                      <p className={styles.panelEyebrow}>Training</p>
                       <h2 className={styles.panelTitle}>Hyperparameters</h2>
                       <p className={styles.trainingIntro}>
                         Keep the defaults for a quick run. Open advanced settings only when you need to tune the
@@ -355,7 +354,6 @@ function GamLabPageContent() {
                 <div className={styles.panelHeader}>
                   <div className={styles.trainingHeader}>
                     <div className={styles.trainingTitleBlock}>
-                      <p className={styles.panelEyebrow}>Interactive</p>
                       <h2 className={styles.panelTitle}>Feature Modes</h2>
                     </div>
                     {modelSource === "train" ? (

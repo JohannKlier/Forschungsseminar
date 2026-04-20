@@ -203,13 +203,10 @@ export default function TrainPage() {
     activePartialIdx,
     setActivePartialIdx,
     metricWarning,
-    lockedFeatures,
     featureModes,
     setFeatureMode,
     handleSave,
     train,
-    manualRefitFromEdits,
-    toggleFeatureLock,
     sidebarTab,
     setSidebarTab,
     partial,
@@ -238,7 +235,6 @@ export default function TrainPage() {
   const { formatHistoryAction, formatHistoryDetail } = useSidebarActions({ history });
   const toolSettings = useToolSettings();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showRefitSettings, setShowRefitSettings] = useState(false);
   const [activeTab, setActiveTab] = useState<"shapes" | "features">("shapes");
 
   const availableFeatures = FEATURE_CATALOG[dataset] ?? EMPTY_FEATURES;
@@ -338,17 +334,7 @@ export default function TrainPage() {
           <div className={styles.topPanels} style={result && activeTab === "shapes" ? { display: "none" } : undefined}>
             {!result ? (
               <section className={styles.panel}>
-                <div className={trainStyles.stageHeader}>
-                  <div className={trainStyles.stagePill}>Stage 1</div>
-                  <div>
-                    <p className={styles.panelEyebrow}>Setup</p>
-                    <h2 className={styles.panelTitle}>Select features, then train</h2>
-                    <p className={trainStyles.stageSummary}>
-                      Choose the input features you want in the initial model. After training, you can still
-                      deactivate features, edit shape functions, and run a final refinement.
-                    </p>
-                  </div>
-                </div>
+                <h2 className={styles.panelTitle}>Select features, then train</h2>
 
                 <div className={trainStyles.field} style={{ marginBottom: "0.75rem" }}>
                   <label className={trainStyles.fieldLabel} htmlFor="train-dataset">Dataset</label>
@@ -442,17 +428,7 @@ export default function TrainPage() {
               </section>
             ) : (
               <section className={`${styles.panel} ${trainStyles.featurePanel}`}>
-                <div className={trainStyles.stageHeader}>
-                  <div className={trainStyles.stagePill}>Stage 2</div>
-                  <div>
-                    <p className={styles.panelEyebrow}>Interactive</p>
-                    <h2 className={styles.panelTitle}>Edit and deactivate</h2>
-                    <p className={trainStyles.stageSummary}>
-                      Change feature modes or edit shape functions. When the current version looks right, run the
-                      final refinement to fit the model around those edits.
-                    </p>
-                  </div>
-                </div>
+                <h2 className={styles.panelTitle}>Edit and deactivate</h2>
 
                 {trainData && (
                   <FeatureModePanel
@@ -463,70 +439,6 @@ export default function TrainPage() {
                   />
                 )}
 
-                <button
-                  type="button"
-                  className={trainStyles.advancedToggle}
-                  onClick={() => setShowRefitSettings((v) => !v)}
-                >
-                  <span>{showRefitSettings ? "Hide" : "Show"} refinement settings</span>
-                  <span className={trainStyles.advancedToggleChevron} style={{ transform: showRefitSettings ? "rotate(180deg)" : undefined }}>▾</span>
-                </button>
-
-                {showRefitSettings && (
-                  <div className={trainStyles.advancedGrid}>
-                    {[
-                      { id: "refit-points", label: "Shape points", value: shapePoints, step: 1, min: 2, max: 250, set: setShapePoints },
-                      { id: "refit-seed", label: "Seed", value: seed, step: 1, min: 0, max: 9999, set: setSeed },
-                      { id: "refit-estimators", label: "Estimators", value: nEstimators, step: 1, min: 10, max: 500, set: setNEstimators },
-                      { id: "refit-boostrate", label: "Boost rate", value: boostRate, step: 0.01, min: 0.01, max: 1, set: setBoostRate },
-                      { id: "refit-initreg", label: "Init reg", value: initReg, step: 0.01, min: 0.01, max: 10, set: setInitReg },
-                      { id: "refit-elmalpha", label: "ELM alpha", value: elmAlpha, step: 0.01, min: 0.01, max: 10, set: setElmAlpha },
-                      { id: "refit-earlystop", label: "Early stopping", value: earlyStopping, step: 1, min: 5, max: 200, set: setEarlyStopping },
-                    ].map(({ id, label, value, step, min, max, set }) => (
-                      <div key={id} className={trainStyles.field}>
-                        <label className={trainStyles.fieldLabel} htmlFor={id}>{label}</label>
-                        <input
-                          id={id}
-                          className={trainStyles.numberInput}
-                          type="number"
-                          step={step}
-                          min={min}
-                          max={max}
-                          value={value}
-                          onChange={(e) => set(Number(e.target.value))}
-                        />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <div className={trainStyles.finalStageCard}>
-                  <div>
-                    <div className={trainStyles.stagePill}>Stage 3</div>
-                    <h3 className={trainStyles.finalStageTitle}>Final refinement</h3>
-                    <p className={trainStyles.stageSummary}>
-                      Refit the model using your edited shapes and current feature deactivations.
-                    </p>
-                  </div>
-                  <div className={trainStyles.finalStageActions}>
-                    <button
-                      type="button"
-                      className={trainStyles.selectionButton}
-                      onClick={applySuggestedOperations}
-                      disabled={!trainData || !models?.residuals?.length}
-                    >
-                      Suggest interactions
-                    </button>
-                    <button
-                      type="button"
-                      className={trainStyles.trainButton}
-                      onClick={() => manualRefitFromEdits()}
-                      disabled={status === "loading"}
-                    >
-                      {status === "loading" ? "Refining…" : "Run final refinement"}
-                    </button>
-                  </div>
-                </div>
               </section>
             )}
           </div>
@@ -611,8 +523,6 @@ export default function TrainPage() {
                 setSelectedKnots={setSelectedKnots}
                 activePartialIdx={activePartialIdx}
                 setActivePartialIdx={setActivePartialIdx}
-                lockedFeatures={lockedFeatures}
-                onToggleFeatureLock={toggleFeatureLock}
                 onRecordAction={recordAction}
                 onCommitEdits={commitEdits}
                 onUndo={undoLast}
