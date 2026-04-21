@@ -35,7 +35,7 @@ type Props = {
   knotEdits: Record<string, KnotSet>;
   setKnotEdits: Dispatch<SetStateAction<Record<string, KnotSet>>>;
   selectedKnots: number[];
-  setSelectedKnots: Dispatch<SetStateAction<number[]>>;
+  setSelectedKnots: (next: number[]) => void;
   activePartialIdx: number;
   setActivePartialIdx: Dispatch<SetStateAction<number>>;
   onRecordAction: (featureKey: string, before: KnotSet, after: KnotSet, action?: string) => void;

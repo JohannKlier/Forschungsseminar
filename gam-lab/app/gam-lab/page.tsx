@@ -398,6 +398,7 @@ function GamLabPageContent() {
                   activeKnots={partial ? knots : null}
                   selectedPointIndices={selectedKnots}
                   activeFeatureCategories={partial?.categories ?? null}
+                  intercept={currentVersion?.intercept ?? null}
                 />
                 <HelpCallout
                   target="sidebar"

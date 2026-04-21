@@ -543,6 +543,7 @@ export default function TrainPage() {
                   activeKnots={knots}
                   selectedPointIndices={selectedKnots}
                   activeFeatureCategories={partial.categories ?? null}
+                  intercept={currentVersion?.intercept ?? null}
                 />
               ) : null}
             </div>

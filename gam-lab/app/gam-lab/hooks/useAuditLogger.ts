@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+
+const AUDIT_LOGGING_ENABLED = false;
 import {
   AUDIT_SESSION_STORAGE_KEY,
   createAuditId,
@@ -77,6 +79,7 @@ export function useAuditLogger() {
 
   const logEvent = useCallback<AuditLogFn>(
     (event: AuditEventInput) => {
+      if (!AUDIT_LOGGING_ENABLED) return;
       queueRef.current.push({
         eventId: createAuditId(),
         occurredAt: new Date().toISOString(),

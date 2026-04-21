@@ -18,7 +18,7 @@ type Params = {
   selectedKnots: number[];
   setKnots: Dispatch<SetStateAction<KnotSet>>;
   setKnotEdits: Dispatch<SetStateAction<Record<string, KnotSet>>>;
-  setSelectedKnots: Dispatch<SetStateAction<number[]>>;
+  setSelectedKnots: (next: number[]) => void;
   onRecordAction: (featureKey: string, before: KnotSet, after: KnotSet, action?: string) => void;
   onCommitEdits: (featureKey: string, next: KnotSet) => void;
   onInteractionStart?: () => void;
@@ -118,10 +118,8 @@ export const useShapeFunctionActions = ({
   const handleKnotChange = (next: KnotSet) => {
     if (!partial) return;
     applyKnotUpdate(partial.key, next);
-    setSelectedKnots((prev) => {
-      const filtered = prev.filter((idx) => idx < next.x.length);
-      return filtered.length === prev.length ? prev : filtered;
-    });
+    const filtered = selectedKnots.filter((idx) => idx < next.x.length);
+    if (filtered.length !== selectedKnots.length) setSelectedKnots(filtered);
   };
 
   const handleDragStart = () => {

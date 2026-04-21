@@ -298,6 +298,7 @@ type Props = {
   activeKnots: KnotSet | null;
   selectedPointIndices: number[];
   activeFeatureCategories: string[] | null;
+  intercept?: number | null;
 };
 
 export default function SidebarPanel({
@@ -315,7 +316,12 @@ export default function SidebarPanel({
   activeKnots,
   selectedPointIndices,
   activeFeatureCategories,
+  intercept,
 }: Props) {
+  const formattedIntercept = typeof intercept === "number" && Number.isFinite(intercept)
+    ? intercept.toPrecision(8)
+    : "n/a";
+
   return (
     <div className={`${styles.settingsRail} ${showTourLabels ? styles.tourFocus : ""}`}>
       <div className={styles.sidebarHeader}>
@@ -359,6 +365,13 @@ export default function SidebarPanel({
       </div>
       {sidebarTab === "edit" ? (
         <>
+          <div className={styles.settingsSection}>
+            <p className={styles.settingsLabel}>Testing</p>
+            <div className={styles.warningIdleCard}>
+              <p className={styles.warningIdleTitle}>Intercept</p>
+              <p className={styles.settingsValue}>{formattedIntercept}</p>
+            </div>
+          </div>
           <div className={styles.settingsSection}>
             <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
               {showTourLabels ? (

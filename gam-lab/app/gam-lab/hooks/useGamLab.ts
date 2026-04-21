@@ -802,6 +802,15 @@ export const useGamLab = (options: InitOptions = {}) => {
     return snapshots;
   }, [history, historyCursor, baselineKnots]);
 
+  const handleKnotSelectionChange = useCallback((next: number[]) => {
+    setSelectedKnots(next);
+    logEvent({
+      category: "edit",
+      action: "edit.selection_changed",
+      detail: { count: next.length },
+    });
+  }, [logEvent]);
+
   return {
     datasets: DATASETS,
     dataset,
@@ -846,7 +855,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     setKnotEdits,
     fixedLinesByFeature,
     selectedKnots,
-    setSelectedKnots,
+    setSelectedKnots: handleKnotSelectionChange,
     history,
     historyCursor,
     recordAction,
