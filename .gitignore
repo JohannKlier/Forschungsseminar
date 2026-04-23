@@ -1,3 +1,9 @@
+# Local folders
+literatur/
+docs/
+.vscode/
+.claude/
+
 # Local datasets
 trainer-service/data/
 

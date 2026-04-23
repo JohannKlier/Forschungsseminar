@@ -126,8 +126,6 @@ export type TrainRequest = {
   model_type: "igann" | "igann_interactive";
   center_shapes: boolean;
   selected_features?: string[];
-  selected_interactions?: string[];
-  selected_operations?: FeatureOperation[];
   seed: number;
   points: number;
   n_estimators: number;
@@ -136,6 +134,7 @@ export type TrainRequest = {
   elm_alpha: number;
   early_stopping: number;
   scale_y: boolean;
+  sample_size?: number;
 };
 
 export const trainModel = async (request: TrainRequest): Promise<TrainResponse> => {

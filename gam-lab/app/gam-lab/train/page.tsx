@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
 import SidebarPanel from "../components/SidebarPanel";
@@ -14,16 +14,11 @@ import { useToolSettings } from "../hooks/useToolSettings";
 import { useAuditLogger } from "../hooks/useAuditLogger";
 import { useUiAuditLogger } from "../hooks/useUiAuditLogger";
 
-type FeatureCatalogEntry = {
-  key: string;
-  label: string;
-  kind: "continuous" | "categorical";
-};
-
 type FeatureSummary =
   | {
       key: string;
       label: string;
+      description?: string;
       kind: "continuous";
       bins: number[];
       min: number | null;
@@ -32,111 +27,21 @@ type FeatureSummary =
   | {
       key: string;
       label: string;
+      description?: string;
       kind: "categorical";
       categories: { label: string; count: number }[];
     };
 
-const EMPTY_FEATURES: FeatureCatalogEntry[] = [];
-
-const FEATURE_DESCRIPTIONS: Record<string, Record<string, string>> = {
-  bike_hourly: {
-    "Time of Day": "Hour of the day when rentals were counted.",
-    "Windspeed": "Normalized wind speed converted to an estimated km/h scale.",
-    "Temperature": "Air temperature converted to an estimated Celsius scale.",
-    "Humidity": "Relative humidity on a 0 to 100 scale.",
-    "Weathersituation": "Observed weather condition, from clear to rain.",
-    "Type of Day": "Whether the observation falls on a working day, weekend, or holiday.",
-  },
-  mimic4_mean_100_full: {
-    "LOS": "Length of ICU stay in days.",
-    "Age": "Patient age at ICU admission.",
-    "Weight+100%mean": "Mean body weight during ICU stay (kg).",
-    "Height+100%mean": "Mean height during ICU stay (cm).",
-    "Bmi+100%mean": "Mean body mass index during stay.",
-    "Temp+100%mean": "Mean body temperature (°C).",
-    "RR+100%mean": "Mean respiratory rate (breaths/min).",
-    "HR+100%mean": "Mean heart rate (beats/min).",
-    "GLU+100%mean": "Mean blood glucose level (mg/dL).",
-    "SBP+100%mean": "Mean systolic blood pressure (mmHg).",
-    "DBP+100%mean": "Mean diastolic blood pressure (mmHg).",
-    "MBP+100%mean": "Mean mean arterial pressure (mmHg).",
-    "Ph+100%mean": "Mean arterial blood pH.",
-    "GCST+100%mean": "Mean Glasgow Coma Scale total score (3–15); lower = more impaired.",
-    "PaO2+100%mean": "Mean partial pressure of arterial oxygen (mmHg).",
-    "Kreatinin+100%mean": "Mean serum creatinine (mg/dL) — kidney function marker.",
-    "FiO2+100%mean": "Mean fraction of inspired oxygen (0–1).",
-    "Kalium+100%mean": "Mean serum potassium (mEq/L).",
-    "Natrium+100%mean": "Mean serum sodium (mEq/L).",
-    "Leukocyten+100%mean": "Mean white blood cell count (10³/μL).",
-    "Thrombocyten+100%mean": "Mean platelet count (10³/μL).",
-    "Bilirubin+100%mean": "Mean total bilirubin (mg/dL) — liver function marker.",
-    "HCO3+100%mean": "Mean serum bicarbonate (mEq/L) — acid-base balance.",
-    "Hb+100%mean": "Mean hemoglobin concentration (g/dL).",
-    "Quick+100%mean": "Mean Quick / prothrombin time (%) — coagulation marker.",
-    "ALAT+100%mean": "Mean alanine aminotransferase (U/L) — liver enzyme.",
-    "ASAT+100%mean": "Mean aspartate aminotransferase (U/L) — liver enzyme.",
-    "PaCO2+100%mean": "Mean partial pressure of arterial CO₂ (mmHg).",
-    "Albumin+100%mean": "Mean serum albumin (g/dL) — nutritional and hepatic marker.",
-    "AnionGAP+100%mean": "Mean anion gap (mEq/L) — metabolic acidosis indicator.",
-    "Lactate+100%mean": "Mean blood lactate (mmol/L) — tissue perfusion marker.",
-    "Urea+100%mean": "Mean blood urea nitrogen (mg/dL).",
-    "Eth": "Patient ethnicity.",
-    "Sex": "Patient sex.",
-  },
-};
-
-const FEATURE_CATALOG: Record<string, FeatureCatalogEntry[]> = {
-  bike_hourly: [
-    { key: "Time of Day", label: "Time of Day", kind: "categorical" },
-    { key: "Windspeed", label: "Windspeed", kind: "continuous" },
-    { key: "Temperature", label: "Temperature", kind: "continuous" },
-    { key: "Humidity", label: "Humidity", kind: "continuous" },
-    { key: "Weathersituation", label: "Weathersituation", kind: "categorical" },
-    { key: "Type of Day", label: "Type of Day", kind: "categorical" },
-  ],
-  mimic4_mean_100_full: [
-    { key: "LOS", label: "LOS", kind: "continuous" },
-    { key: "Age", label: "Age", kind: "continuous" },
-    { key: "Weight+100%mean", label: "Weight+100%mean", kind: "continuous" },
-    { key: "Height+100%mean", label: "Height+100%mean", kind: "continuous" },
-    { key: "Bmi+100%mean", label: "Bmi+100%mean", kind: "continuous" },
-    { key: "Temp+100%mean", label: "Temp+100%mean", kind: "continuous" },
-    { key: "RR+100%mean", label: "RR+100%mean", kind: "continuous" },
-    { key: "HR+100%mean", label: "HR+100%mean", kind: "continuous" },
-    { key: "GLU+100%mean", label: "GLU+100%mean", kind: "continuous" },
-    { key: "SBP+100%mean", label: "SBP+100%mean", kind: "continuous" },
-    { key: "DBP+100%mean", label: "DBP+100%mean", kind: "continuous" },
-    { key: "MBP+100%mean", label: "MBP+100%mean", kind: "continuous" },
-    { key: "Ph+100%mean", label: "Ph+100%mean", kind: "continuous" },
-    { key: "GCST+100%mean", label: "GCST+100%mean", kind: "continuous" },
-    { key: "PaO2+100%mean", label: "PaO2+100%mean", kind: "continuous" },
-    { key: "Kreatinin+100%mean", label: "Kreatinin+100%mean", kind: "continuous" },
-    { key: "FiO2+100%mean", label: "FiO2+100%mean", kind: "continuous" },
-    { key: "Kalium+100%mean", label: "Kalium+100%mean", kind: "continuous" },
-    { key: "Natrium+100%mean", label: "Natrium+100%mean", kind: "continuous" },
-    { key: "Leukocyten+100%mean", label: "Leukocyten+100%mean", kind: "continuous" },
-    { key: "Thrombocyten+100%mean", label: "Thrombocyten+100%mean", kind: "continuous" },
-    { key: "Bilirubin+100%mean", label: "Bilirubin+100%mean", kind: "continuous" },
-    { key: "HCO3+100%mean", label: "HCO3+100%mean", kind: "continuous" },
-    { key: "Hb+100%mean", label: "Hb+100%mean", kind: "continuous" },
-    { key: "Quick+100%mean", label: "Quick+100%mean", kind: "continuous" },
-    { key: "ALAT+100%mean", label: "ALAT+100%mean", kind: "continuous" },
-    { key: "ASAT+100%mean", label: "ASAT+100%mean", kind: "continuous" },
-    { key: "PaCO2+100%mean", label: "PaCO2+100%mean", kind: "continuous" },
-    { key: "Albumin+100%mean", label: "Albumin+100%mean", kind: "continuous" },
-    { key: "AnionGAP+100%mean", label: "AnionGAP+100%mean", kind: "continuous" },
-    { key: "Lactate+100%mean", label: "Lactate+100%mean", kind: "continuous" },
-    { key: "Urea+100%mean", label: "Urea+100%mean", kind: "continuous" },
-    { key: "Eth", label: "Eth", kind: "categorical" },
-    { key: "Sex", label: "Sex", kind: "categorical" },
-  ],
-};
 
 export default function TrainPage() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
-  const { logEvent } = useAuditLogger();
+  const { logEvent, kuerzel, setKuerzel } = useAuditLogger();
+  const [kuerzelInput, setKuerzelInput] = useState("");
+  const [kuerzelError, setKuerzelError] = useState("");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   useUiAuditLogger(logEvent);
   const {
     status,
@@ -145,12 +50,11 @@ export default function TrainPage() {
     dataset,
     setDataset,
     modelType,
+    setModelType,
     centerShapes,
     setCenterShapes,
     selectedFeatures,
     setSelectedFeatures,
-    setSelectedInteractions,
-    setSelectedOperations,
     shapePoints,
     setShapePoints,
     seed,
@@ -165,6 +69,8 @@ export default function TrainPage() {
     setElmAlpha,
     earlyStopping,
     setEarlyStopping,
+    sampleSize,
+    setSampleSize,
     selectedDataset,
     baselineKnots,
     fixedLinesByFeature,
@@ -191,6 +97,7 @@ export default function TrainPage() {
     deleteHistoryEntry,
     currentVersion,
     trainData,
+    modelInfo,
   } = useGamLab({ auditLogger: logEvent });
 
   useEffect(() => {
@@ -207,13 +114,20 @@ export default function TrainPage() {
   const { formatHistoryAction, formatHistoryDetail } = useSidebarActions({ history });
   const toolSettings = useToolSettings();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showIntro, setShowIntro] = useState(false);
+  const prevResultRef = useRef<typeof result>(null);
+
+  useEffect(() => {
+    if (result && !prevResultRef.current) {
+      setShowIntro(true);
+    }
+    prevResultRef.current = result;
+  }, [result]);
+
   const [featureSummaryState, setFeatureSummaryState] = useState<{
     dataset: string;
     summaries: Record<string, FeatureSummary>;
   } | null>(null);
-
-  const availableFeatures = FEATURE_CATALOG[dataset] ?? EMPTY_FEATURES;
-  const featureKeys = useMemo(() => availableFeatures.map((feature) => feature.key), [availableFeatures]);
 
   useEffect(() => {
     let cancelled = false;
@@ -239,6 +153,8 @@ export default function TrainPage() {
   }, [dataset, seed]);
 
   const featureSummaries = featureSummaryState?.dataset === dataset ? featureSummaryState.summaries : {};
+  const availableFeatures = useMemo(() => Object.values(featureSummaries), [featureSummaries]);
+  const featureKeys = useMemo(() => availableFeatures.map((feature) => feature.key), [availableFeatures]);
 
   useEffect(() => {
     setSelectedFeatures((prev) => {
@@ -268,8 +184,8 @@ export default function TrainPage() {
         return acc;
       },
       [[], []] as [
-        Array<FeatureCatalogEntry & { checked: boolean }>,
-        Array<FeatureCatalogEntry & { checked: boolean }>,
+        Array<FeatureSummary & { checked: boolean }>,
+        Array<FeatureSummary & { checked: boolean }>,
       ],
     );
   })();
@@ -323,7 +239,110 @@ export default function TrainPage() {
     );
   };
 
+  const handleKuerzelSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!kuerzelInput.trim()) {
+      setKuerzelError("Bitte einen Kürzel eingeben.");
+      return;
+    }
+    setKuerzel(kuerzelInput.trim());
+  };
+
   return (
+    <>
+    {mounted && !kuerzel && (
+      <div className={trainStyles.kuerzelOverlay}>
+        <div className={trainStyles.kuerzelCard}>
+          <p className={trainStyles.introEyebrow}>User Study — GAM Lab</p>
+          <h1 className={trainStyles.introHeading}>Kürzel eingeben</h1>
+          <p className={trainStyles.introBody}>
+            Ihnen wurde für diese Studie ein persönlicher Kürzel zugewiesen.
+            Geben Sie ihn ein, um Ihre Sitzung zu starten.
+          </p>
+          <form onSubmit={handleKuerzelSubmit} className={trainStyles.kuerzelForm}>
+            <input
+              className={trainStyles.kuerzelInput}
+              type="text"
+              placeholder="z. B. TN01"
+              value={kuerzelInput}
+              onChange={(e) => { setKuerzelInput(e.target.value); setKuerzelError(""); }}
+              autoFocus
+              maxLength={30}
+            />
+            {kuerzelError && <p className={trainStyles.kuerzelError}>{kuerzelError}</p>}
+            <button className={trainStyles.introConfirmButton} type="submit">
+              Bestätigen
+            </button>
+          </form>
+        </div>
+      </div>
+    )}
+    {showIntro && (
+      <div className={trainStyles.introOverlay}>
+        <div className={trainStyles.introCard}>
+          <div className={trainStyles.introHeader}>
+            <p className={trainStyles.introEyebrow}>User Study — GAM Lab</p>
+            <h1 className={trainStyles.introHeading}>Ihre Aufgabe</h1>
+            <p className={trainStyles.introLead}>
+              Das Modell wurde trainiert und zeigt Ihnen nun, wie es jeden Messwert
+              bei der Vorhersage von <strong>Intensivstationsmortalität</strong> gewichtet.
+              Beurteilen Sie, ob diese Gewichtung <strong>medizinisch plausibel</strong> ist —
+              und korrigieren Sie sie, wenn nötig.
+            </p>
+          </div>
+
+          <div className={trainStyles.introSteps}>
+            <div className={trainStyles.introStep}>
+              <div className={trainStyles.introStepIcon}>
+                <span className={trainStyles.introStepNum}>1</span>
+              </div>
+              <div className={trainStyles.introStepBody}>
+                <p className={trainStyles.introStepTitle}>Kurven lesen</p>
+                <p className={trainStyles.introStepText}>
+                  Jedes Merkmal hat eine Kurve. Sie zeigt: Wie verändert sich das
+                  vorhergesagte Sterberisiko, wenn dieser Messwert steigt oder fällt?
+                </p>
+              </div>
+            </div>
+            <div className={trainStyles.introStep}>
+              <div className={trainStyles.introStepIcon}>
+                <span className={trainStyles.introStepNum}>2</span>
+              </div>
+              <div className={trainStyles.introStepBody}>
+                <p className={trainStyles.introStepTitle}>y-Achse verstehen</p>
+                <p className={trainStyles.introStepText}>
+                  Werte <strong>über null</strong> erhöhen das vorhergesagte Risiko,
+                  Werte <strong>unter null</strong> senken es.
+                  Bei null hat der Messwert an dieser Stelle keinen Einfluss.
+                </p>
+              </div>
+            </div>
+            <div className={trainStyles.introStep}>
+              <div className={trainStyles.introStepIcon}>
+                <span className={trainStyles.introStepNum}>3</span>
+              </div>
+              <div className={trainStyles.introStepBody}>
+                <p className={trainStyles.introStepTitle}>Kurven korrigieren</p>
+                <p className={trainStyles.introStepText}>
+                  Wirkt eine Kurve klinisch falsch? Ziehen Sie die Punkte nach oben
+                  oder unten. Die Seitenleiste zeigt, wie sich Ihre Änderungen auf
+                  die Modellgüte auswirken.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className={trainStyles.introFooter}>
+            <button
+              className={trainStyles.introConfirmButton}
+              onClick={() => setShowIntro(false)}
+            >
+              Verstanden — Modell anzeigen
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
     <div className={styles.pageFrame}>
       <div className={styles.page}>
         <section className={styles.dashboard}>
@@ -362,6 +381,19 @@ export default function TrainPage() {
                   </select>
                 </div>
 
+                <div className={trainStyles.field} style={{ marginBottom: "0.75rem" }}>
+                  <label className={trainStyles.fieldLabel} htmlFor="train-modeltype">Model type</label>
+                  <select
+                    id="train-modeltype"
+                    className={trainStyles.select}
+                    value={modelType}
+                    onChange={(event) => setModelType(event.target.value as "igann" | "igann_interactive")}
+                  >
+                    <option value="igann_interactive">IGANN Interactive</option>
+                    <option value="igann">IGANN</option>
+                  </select>
+                </div>
+
                 <div className={trainStyles.featureSelectionCard}>
                   <div className={trainStyles.featureSelectionHeader}>
                     <div>
@@ -394,7 +426,7 @@ export default function TrainPage() {
                         <p className={trainStyles.featureColumnTitle}>{heading}</p>
                         <div className={trainStyles.featureChecklist}>
                           {featureSelection[columnIdx].map((feature) => {
-                            const desc = FEATURE_DESCRIPTIONS[dataset]?.[feature.key];
+                            const desc = featureSummaries[feature.key]?.description;
                             const summary = featureSummaries[feature.key];
                             return (
                               <label key={feature.key} className={trainStyles.featureOption}>
@@ -422,12 +454,8 @@ export default function TrainPage() {
                     type="button"
                     className={trainStyles.trainButton}
                     onClick={() => {
-                      setSelectedInteractions([]);
-                      setSelectedOperations([]);
                       train({
                         selected_features: selectedFeatures,
-                        selected_interactions: [],
-                        selected_operations: [],
                       });
                     }}
                     disabled={status === "loading" || selectedFeatures.length === 0}
@@ -441,6 +469,27 @@ export default function TrainPage() {
 
           {!result && (
             <aside className={trainStyles.preTrainSidebar}>
+              {selectedDataset.id === "mimic4_mean_100_full" && (
+                <div className={trainStyles.preTrainSidebarSection}>
+                  <p className={trainStyles.preTrainSectionLabel}>Dataset options</p>
+                  <div className={trainStyles.field}>
+                    <label className={trainStyles.fieldLabel} htmlFor="train-samplesize">
+                      Sample size
+                    </label>
+                    <input
+                      id="train-samplesize"
+                      className={trainStyles.numberInput}
+                      type="number"
+                      step={100}
+                      min={100}
+                      max={65350}
+                      value={sampleSize}
+                      onChange={(e) => setSampleSize(Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className={trainStyles.preTrainSidebarSection}>
                 <p className={trainStyles.preTrainSectionLabel}>Model options</p>
                 <label className={trainStyles.preTrainToggle}>
@@ -508,7 +557,7 @@ export default function TrainPage() {
               <ShapeFunctionsPanel
                 shapes={result.version.shapes}
                 trainData={result.data}
-                featureDescriptions={result.data.featureDescriptions ?? FEATURE_DESCRIPTIONS[result.model.dataset]}
+                featureDescriptions={result.data.featureDescriptions}
                 baselineKnots={baselineKnots}
                 fixedLinesByFeature={fixedLinesByFeature}
                 knots={knots}
@@ -544,6 +593,8 @@ export default function TrainPage() {
                   selectedPointIndices={selectedKnots}
                   activeFeatureCategories={partial.categories ?? null}
                   intercept={currentVersion?.intercept ?? null}
+                  modelInfo={modelInfo}
+                  currentVersion={currentVersion}
                 />
               ) : null}
             </div>
@@ -551,5 +602,6 @@ export default function TrainPage() {
         </section>
       </div>
     </div>
+    </>
   );
 }

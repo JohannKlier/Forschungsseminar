@@ -79,7 +79,7 @@ export default async function LogsPage({ searchParams }: PageProps) {
             <strong className={styles.summaryValue}>{days.length}</strong>
           </article>
           <article className={styles.summaryCard}>
-            <span className={styles.summaryLabel}>Users in result</span>
+            <span className={styles.summaryLabel}>Kürzel in result</span>
             <strong className={styles.summaryValue}>{userOptions.length}</strong>
           </article>
           <article className={styles.summaryCard}>
@@ -103,8 +103,8 @@ export default async function LogsPage({ searchParams }: PageProps) {
             </label>
 
             <label className={styles.field}>
-              <span>User</span>
-              <input list="log-users" name="userId" defaultValue={userId ?? ""} placeholder="anon-..." />
+              <span>Kürzel</span>
+              <input list="log-users" name="userId" defaultValue={userId ?? ""} placeholder="z. B. TN01" />
             </label>
 
             <label className={styles.field}>

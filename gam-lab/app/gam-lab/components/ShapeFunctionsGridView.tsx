@@ -74,7 +74,9 @@ export default function ShapeFunctionsGridView({ shapes, baselineKnots, knotEdit
         const cardHeader = (
           <div className={styles.gridCardHeader}>
             <span className={styles.gridCardTitle}>{title}</span>
-            <span className={styles.gridImportanceLabel}>{(importance * 100).toFixed(1)}%</span>
+            <span className={styles.gridImportanceLabel} title="Normalized contribution SD share">
+              {(importance * 100).toFixed(1)}%
+            </span>
           </div>
         );
 

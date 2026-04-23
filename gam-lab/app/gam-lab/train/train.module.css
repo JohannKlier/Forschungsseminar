@@ -1,3 +1,205 @@
+/* ─── Kürzel gate overlay ──────────────────────────────────── */
+.kuerzelOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9100;
+  background: rgba(10, 18, 36, 0.82);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.kuerzelCard {
+  background: #fff;
+  border-radius: 1.25rem;
+  padding: 2.5rem 2.75rem 2.25rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.kuerzelForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.25rem;
+}
+
+.kuerzelInput {
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.65rem;
+  border: 1.5px solid #e2e8f0;
+  background: #f8fafc;
+  font-size: 1.05rem;
+  color: #0f172a;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.kuerzelInput:focus {
+  outline: none;
+  border-color: #1e40af;
+}
+
+.kuerzelError {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #b91c1c;
+  font-weight: 500;
+}
+
+/* ─── Post-training intro overlay ─────────────────────────── */
+.introOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  background: rgba(10, 18, 36, 0.78);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.introCard {
+  background: #fff;
+  border-radius: 1.5rem;
+  max-width: 720px;
+  width: 100%;
+  box-shadow: 0 32px 80px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.introHeader {
+  padding: 2.5rem 2.75rem 2rem;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.introEyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #1e40af;
+}
+
+.introHeading {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #0f172a;
+}
+
+.introLead {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.introBody {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #334155;
+  line-height: 1.65;
+}
+
+.introSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 1.5rem 2.75rem;
+}
+
+.introStep {
+  display: flex;
+  align-items: flex-start;
+  gap: 1.25rem;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.introStep:last-child {
+  border-bottom: none;
+}
+
+.introStepIcon {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: 50%;
+  background: #eff6ff;
+  border: 2px solid #bfdbfe;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
+}
+
+.introStepNum {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #1e40af;
+  line-height: 1;
+}
+
+.introStepBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.introStepTitle {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.introStepText {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #475569;
+  line-height: 1.6;
+}
+
+.introFooter {
+  padding: 1.5rem 2.75rem 2rem;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.introConfirmButton {
+  padding: 0.8rem 2rem;
+  border-radius: 0.65rem;
+  background: #1e40af;
+  color: #fff;
+  font-size: 0.95rem;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  letter-spacing: 0.01em;
+}
+
+.introConfirmButton:hover {
+  background: #1d3a9e;
+}
+
 /* Banner right: tab bar + "choose another model" link */
 .bannerRight {
   display: flex;
@@ -142,6 +344,52 @@
   .primaryRow {
     grid-template-columns: 1fr;
   }
+}
+
+/* Dataset intro box */
+.datasetIntro {
+  background: #f0f6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.75rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.datasetIntroTitle {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #1e40af;
+}
+
+.datasetIntroText {
+  margin: 0;
+  font-size: 0.82rem;
+  color: #1e3a5f;
+  line-height: 1.5;
+}
+
+.datasetIntroStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.datasetIntroStats li {
+  font-size: 0.78rem;
+  color: #374151;
+}
+
+.datasetIntroStats li strong {
+  color: #1e40af;
 }
 
 /* Generic field */

@@ -1,13 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
-
-const AUDIT_LOGGING_ENABLED = false;
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AUDIT_CODE_STORAGE_KEY,
   AUDIT_SESSION_STORAGE_KEY,
   createAuditId,
   getCurrentPage,
-  getParticipantIdFromLocation,
+  sanitizeKuerzel,
   type AuditIdentity,
   type AuditEventInput,
   type AuditLogFn,
@@ -18,9 +17,7 @@ const FLUSH_DELAY_MS = 800;
 const MAX_BATCH_SIZE = 50;
 
 const getOrCreateSessionId = () => {
-  if (typeof window === "undefined") {
-    return `session-${createAuditId()}`;
-  }
+  if (typeof window === "undefined") return `session-${createAuditId()}`;
   const existing = window.sessionStorage.getItem(AUDIT_SESSION_STORAGE_KEY);
   if (existing) return existing;
   const created = `session-${createAuditId()}`;
@@ -28,7 +25,14 @@ const getOrCreateSessionId = () => {
   return created;
 };
 
+const readStoredKuerzel = (): string | null => {
+  if (typeof window === "undefined") return null;
+  const raw = window.localStorage.getItem(AUDIT_CODE_STORAGE_KEY);
+  return raw ? sanitizeKuerzel(raw) : null;
+};
+
 export function useAuditLogger() {
+  const [kuerzel, setKuerzelState] = useState<string | null>(() => readStoredKuerzel());
   const queueRef = useRef<AuditQueuedEvent[]>([]);
   const identityRef = useRef<AuditIdentity | null>(null);
   const flushTimerRef = useRef<number | null>(null);
@@ -47,7 +51,6 @@ export function useAuditLogger() {
         body: JSON.stringify({
           userId: identity.userId,
           sessionId: identity.sessionId,
-          participantId: identity.participantId,
           events: batch,
         }),
         keepalive: true,
@@ -60,26 +63,20 @@ export function useAuditLogger() {
     } finally {
       isFlushingRef.current = false;
       if (queueRef.current.length > 0) {
-        flushTimerRef.current = window.setTimeout(() => {
-          void flush();
-        }, FLUSH_DELAY_MS);
+        flushTimerRef.current = window.setTimeout(() => void flush(), FLUSH_DELAY_MS);
       }
     }
   }, []);
 
   const scheduleFlush = useCallback(() => {
     if (typeof window === "undefined") return;
-    if (flushTimerRef.current != null) {
-      window.clearTimeout(flushTimerRef.current);
-    }
-    flushTimerRef.current = window.setTimeout(() => {
-      void flush();
-    }, FLUSH_DELAY_MS);
+    if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current);
+    flushTimerRef.current = window.setTimeout(() => void flush(), FLUSH_DELAY_MS);
   }, [flush]);
 
   const logEvent = useCallback<AuditLogFn>(
     (event: AuditEventInput) => {
-      if (!AUDIT_LOGGING_ENABLED) return;
+      if (!identityRef.current) return;
       queueRef.current.push({
         eventId: createAuditId(),
         occurredAt: new Date().toISOString(),
@@ -91,64 +88,53 @@ export function useAuditLogger() {
     [scheduleFlush],
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    const participantId = getParticipantIdFromLocation();
-    const sessionId = getOrCreateSessionId();
-
-    const init = async () => {
-      try {
-        const response = await fetch("/api/audit/session", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ preferredUserId: participantId }),
-        });
-        const payload = (await response.json()) as { userId?: string };
-        if (cancelled) return;
-        identityRef.current = {
-          userId: payload.userId ?? `anon-${createAuditId()}`,
-          sessionId,
-          participantId,
-        };
-      } catch {
-        if (cancelled) return;
-        identityRef.current = {
-          userId: participantId ?? `anon-${createAuditId()}`,
-          sessionId,
-          participantId,
-        };
-      }
-
-      logEvent({
+  const setKuerzel = useCallback(
+    (code: string) => {
+      const sanitized = sanitizeKuerzel(code);
+      if (!sanitized) return;
+      window.localStorage.setItem(AUDIT_CODE_STORAGE_KEY, sanitized);
+      const sessionId = getOrCreateSessionId();
+      identityRef.current = { userId: sanitized, sessionId };
+      setKuerzelState(sanitized);
+      queueRef.current.push({
+        eventId: createAuditId(),
+        occurredAt: new Date().toISOString(),
         category: "system",
         action: "session.started",
-        detail: {
-          participantId: participantId ?? null,
-          pathname: window.location.pathname,
-        },
+        detail: { kuerzel: sanitized, pathname: window.location.pathname },
       });
       void flush();
-    };
+    },
+    [flush],
+  );
 
-    void init();
+  // On mount: restore stored kuerzel and start session
+  useEffect(() => {
+    const stored = readStoredKuerzel();
+    if (!stored) return;
+    const sessionId = getOrCreateSessionId();
+    identityRef.current = { userId: stored, sessionId };
+    // log without going through logEvent to avoid the identityRef timing issue
+    queueRef.current.push({
+      eventId: createAuditId(),
+      occurredAt: new Date().toISOString(),
+      category: "system",
+      action: "session.started",
+      detail: { kuerzel: stored, pathname: window.location.pathname },
+    });
+    void flush();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
+  useEffect(() => {
     const handlePageHide = () => {
       const identity = identityRef.current;
-      if (!identity || queueRef.current.length === 0 || typeof navigator.sendBeacon !== "function") {
-        return;
-      }
+      if (!identity || queueRef.current.length === 0 || typeof navigator.sendBeacon !== "function") return;
       const pending = queueRef.current.splice(0, queueRef.current.length);
       navigator.sendBeacon(
         "/api/audit/events",
         new Blob(
-          [
-            JSON.stringify({
-              userId: identity.userId,
-              sessionId: identity.sessionId,
-              participantId: identity.participantId,
-              events: pending,
-            }),
-          ],
+          [JSON.stringify({ userId: identity.userId, sessionId: identity.sessionId, events: pending })],
           { type: "application/json" },
         ),
       );
@@ -156,13 +142,10 @@ export function useAuditLogger() {
 
     window.addEventListener("pagehide", handlePageHide);
     return () => {
-      cancelled = true;
-      if (flushTimerRef.current != null) {
-        window.clearTimeout(flushTimerRef.current);
-      }
       window.removeEventListener("pagehide", handlePageHide);
+      if (flushTimerRef.current != null) window.clearTimeout(flushTimerRef.current);
     };
-  }, [flush, logEvent]);
+  }, []);
 
-  return { logEvent };
+  return { logEvent, kuerzel, setKuerzel };
 }

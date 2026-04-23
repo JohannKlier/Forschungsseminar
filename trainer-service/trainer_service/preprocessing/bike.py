@@ -12,6 +12,16 @@ from trainer_service.paths import DATA_DIR
 from trainer_service.preprocessing.common import sort_category_values
 
 
+BIKE_DESCRIPTIONS: dict[str, str] = {
+    "Time of Day": "Hour of the day when rentals were counted.",
+    "Windspeed": "Normalized wind speed converted to an estimated km/h scale.",
+    "Temperature": "Air temperature converted to an estimated Celsius scale.",
+    "Humidity": "Relative humidity on a 0 to 100 scale.",
+    "Weathersituation": "Observed weather condition, from clear to rain.",
+    "Type of Day": "Whether the observation falls on a working day, weekend, or holiday.",
+}
+
+
 def preprocess_bike_hourly(seed: int):
     """Replicate preprocessing from the original trainer notebook."""
     del seed
@@ -95,4 +105,4 @@ def preprocess_bike_hourly(seed: int):
         if col in x_processed.columns
     }
     labels = {col: col for col in x_processed.columns}
-    return x_processed, y.to_numpy(), cat_info, labels
+    return x_processed, y.to_numpy(), cat_info, labels, BIKE_DESCRIPTIONS, []

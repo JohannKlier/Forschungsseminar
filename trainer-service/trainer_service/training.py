@@ -72,6 +72,24 @@ def evaluate_contribs(
     return interpolate_numeric(feat_values, xs, ys)
 
 
+def _sigmoid(values: np.ndarray) -> np.ndarray:
+    """Numerically stable sigmoid for additive classification scores."""
+    return 1 / (1 + np.exp(-np.clip(values, -500, 500)))
+
+
+def _model_intercept(model) -> float:
+    """Return the intercept belonging to the exported additive shape functions."""
+    gam = getattr(model, "GAM", None)
+    if gam is not None and hasattr(gam, "intercept_"):
+        return float(np.asarray(gam.intercept_).reshape(-1)[0])
+
+    linear_model = getattr(model, "linear_model", None)
+    if linear_model is not None and hasattr(linear_model, "intercept_"):
+        return float(np.asarray(linear_model.intercept_).reshape(-1)[0])
+
+    return 0.0
+
+
 def normalize_numeric_shape_points(
     shape_functions: Dict,
     feature_keys: List[str],
@@ -440,7 +458,7 @@ def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, x_train, 
 
 def _load_dataset(request: TrainRequest):
     if request.dataset == "mimic4_mean_100_full":
-        return preprocess_mimic4_mean_100_full(request.seed)
+        return preprocess_mimic4_mean_100_full(request.seed, request.sample_size)
     return preprocess_bike_hourly(request.seed)
 
 
@@ -453,11 +471,12 @@ def build_dataset_feature_summary(dataset: str, seed: int = 3) -> Dict:
         )
 
     request = TrainRequest(dataset=dataset, seed=seed)
-    x_processed, _y_full, cat_info, labels = _load_dataset(request)
+    x_processed, _y_full, cat_info, labels, descriptions, _operations = _load_dataset(request)
     features = []
 
     for key in x_processed.columns:
         label = labels.get(key, key)
+        description = descriptions.get(key, "")
         if key in cat_info:
             counts = x_processed[key].astype(str).value_counts(dropna=False).to_dict()
             categories = [
@@ -467,6 +486,7 @@ def build_dataset_feature_summary(dataset: str, seed: int = 3) -> Dict:
             features.append({
                 "key": key,
                 "label": label,
+                "description": description,
                 "kind": "categorical",
                 "categories": categories,
             })
@@ -485,6 +505,7 @@ def build_dataset_feature_summary(dataset: str, seed: int = 3) -> Dict:
         features.append({
             "key": key,
             "label": label,
+            "description": description,
             "kind": "continuous",
             "bins": bins,
             "min": min_value,
@@ -524,14 +545,14 @@ def build_train_response(request: TrainRequest):
     n_estimators = max(10, min(500, request.n_estimators))
     boost_rate = max(0.01, min(1.0, request.boost_rate))
     init_reg = max(0.01, min(10.0, request.init_reg))
-    elm_alpha = max(0.01, min(10.0, request.elm_alpha))
+    elm_alpha = max(0.0001, min(10.0, request.elm_alpha))
     early_stopping = max(5, min(200, request.early_stopping))
 
     classification_datasets = {"mimic4_mean_100_full"}
     task_type = "classification" if request.dataset in classification_datasets else "regression"
-    igann_task = "regression" if request.dataset in classification_datasets else task_type
+    igann_task = task_type
 
-    x_processed, y_full, cat_info, labels = _load_dataset(request)
+    x_processed, y_full, cat_info, labels, descriptions, preprocessing_operations = _load_dataset(request)
 
     requested_features = [str(feature) for feature in (request.selected_features or [])]
     if requested_features:
@@ -565,12 +586,10 @@ def build_train_response(request: TrainRequest):
     y_test = np.array(y_test_arr).astype(float).flatten()
     use_scale_y = bool(request.scale_y) if task_type == "regression" else False
 
-    operation_specs = _normalize_operation_specs(
-        feature_keys,
-        request.selected_interactions,
-        request.selected_operations,
-        labels,
-    )
+    if preprocessing_operations:
+        operation_specs = _normalize_operation_specs(feature_keys, None, preprocessing_operations, labels)
+    else:
+        operation_specs = []
     active_operation_specs = operation_specs
 
     interaction_dummy_cols: Dict[str, List[str]] = {}
@@ -606,19 +625,13 @@ def build_train_response(request: TrainRequest):
         scale_y=use_scale_y,
     )
     if model_type == "igann_interactive":
-        model_kwargs["GAMwrapper"] = True
         model_kwargs["GAM_detail"] = num_points
     igann = model_cls(**model_kwargs)
 
     igann.fit(x_train_aug, y_train)
 
-    if center_shapes:
-        if model_type != "igann_interactive" or not hasattr(igann, "center_shape_functions"):
-            raise HTTPException(
-                status_code=400,
-                detail="Centering shape functions currently requires model_type='igann_interactive'.",
-            )
-        igann.center_shape_functions(x_train_df, update_intercept=True)
+    if center_shapes and model_type == "igann_interactive" and hasattr(igann, "center_shape_functions"):
+        igann.center_shape_functions(x_train_aug, update_intercept=True)
 
     label_map = dict(labels)
     for spec in active_operation_specs:
@@ -671,19 +684,9 @@ def build_train_response(request: TrainRequest):
     total_train = np.sum(np.stack(contribs_train, axis=0), axis=0) if contribs_train else np.zeros_like(y_train)
     total_test = np.sum(np.stack(contribs_test, axis=0), axis=0) if contribs_test else np.zeros_like(y_test)
     if task_type == "classification":
-        target_mean = float(np.mean(y_train)) if len(y_train) else 0.0
-        target_mean = min(max(target_mean, 1e-4), 1 - 1e-4)
-        low, high = -12.0, 12.0
-        for _ in range(40):
-            mid = (low + high) / 2
-            probs = 1 / (1 + np.exp(-(total_train + mid)))
-            if float(np.mean(probs)) < target_mean:
-                low = mid
-            else:
-                high = mid
-        intercept_val = (low + high) / 2
-        preds_train = 1 / (1 + np.exp(-(total_train + intercept_val)))
-        preds_test = 1 / (1 + np.exp(-(total_test + intercept_val))) if len(total_test) else np.array([])
+        intercept_val = _model_intercept(igann)
+        preds_train = _sigmoid(total_train + intercept_val)
+        preds_test = _sigmoid(total_test + intercept_val) if len(total_test) else np.array([])
     else:
         intercept_val = float(np.mean(y_train - total_train)) if len(y_train) else 0.0
         preds_train = total_train + intercept_val
@@ -794,6 +797,7 @@ def build_train_response(request: TrainRequest):
             "testY": y_test.tolist(),
             "categories": cat_info,
             "featureLabels": {key: label_map[key] for key in feature_keys},
+            "featureDescriptions": {key: descriptions.get(key, "") for key in feature_keys},
         },
         "version": {
             "versionId": str(timestamp),

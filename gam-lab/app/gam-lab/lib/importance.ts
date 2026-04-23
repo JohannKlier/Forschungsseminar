@@ -3,13 +3,14 @@ import { KnotSet, ShapeFunction } from "../types";
 
 const finiteValues = (values: number[]) => values.filter((v) => Number.isFinite(v));
 
-const computeVariance = (values: number[]) => {
+const computeStandardDeviation = (values: number[]) => {
   if (!values.length) return 0;
   const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
-  return values.reduce((sum, v) => {
+  const variance = values.reduce((sum, v) => {
     const delta = v - mean;
     return sum + delta * delta;
   }, 0) / values.length;
+  return Math.sqrt(variance);
 };
 
 // scatterX is passed separately (from trainData.trainX[shape.key]) rather than
@@ -26,16 +27,16 @@ export const computeFeatureImportance = (shape: ShapeFunction, scatterX: number[
         const key = String(raw);
         values.push(valueByCategory.get(key) ?? 0);
       });
-      return computeVariance(finiteValues(values));
+      return computeStandardDeviation(finiteValues(values));
     }
-    return computeVariance(finiteValues(knots.y));
+    return computeStandardDeviation(finiteValues(knots.y));
   }
   if (scatterX.length) {
     const numericScatter = scatterX.filter((v): v is number => Number.isFinite(v));
     const interpolated = interpolateFeature(numericScatter, knots);
-    return computeVariance(finiteValues(interpolated));
+    return computeStandardDeviation(finiteValues(interpolated));
   }
-  return computeVariance(finiteValues(knots.y));
+  return computeStandardDeviation(finiteValues(knots.y));
 };
 
 export const computeShapeImportance = (
@@ -45,7 +46,7 @@ export const computeShapeImportance = (
 ) => {
   if (shape.editableZ) {
     const values = scatterX.filter((v): v is number => typeof v === "number" && Number.isFinite(v));
-    return computeVariance(values);
+    return computeStandardDeviation(values);
   }
   return computeFeatureImportance(shape, scatterX as number[], knots);
 };

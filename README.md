@@ -90,3 +90,32 @@ The trainer creates the saved-model table automatically on first use.
 ## Notes
 
 - Frontend talks directly to the trainer service, so run both for full functionality.
+
+## Ordnerstruktur
+
+```
+Forschungsseminar/
+├── dev.sh                  # Startet Frontend + Trainer-Service gleichzeitig
+├── docs/                   # Projektdokumentation (z. B. User-Study-Protokoll)
+├── literatur/              # Referenz-PDFs für das Forschungsseminar
+│
+├── gam-lab/                # Next.js 16 + React 19 Frontend
+│   └── app/
+│       ├── api/            # Server-seitige Next.js Route-Handler
+│       ├── gam-lab/        # Haupt-Feature: interaktiver GAM-Editor
+│       │   ├── train/      # Trainingseinstellungs-Seite
+│       │   ├── compare/    # Modellvergleich-Seite
+│       │   ├── components/ # React-Komponenten (Plots, Editor, Sidebar)
+│       │   ├── hooks/      # React-Hooks (State, Aktionen, Audit-Logging)
+│       │   ├── lib/        # Pure Hilfsfunktionen (API-Clients, Kurvenlogik)
+│       │   ├── types/      # Gemeinsame TypeScript-Typen
+│       │   └── workers/    # Web Worker für Berechnungen im Hintergrund
+│       └── logs/           # Audit-Log-Ansichts-Seite
+│
+└── trainer-service/        # Python FastAPI Backend
+    ├── trainer_service/    # Haupt-Package (API, Training, Schemas, Persistenz)
+    │   └── preprocessing/  # Dataset-spezifische Vorverarbeitungsmodule
+    ├── data/               # Eingabe-Datensätze (bike.csv, mimic4 …)
+    ├── models/             # Vorberechnete Preset-Modell-JSONs
+    └── saved_models/       # Vom Benutzer gespeicherte Modell-JSONs (lokal)
+```

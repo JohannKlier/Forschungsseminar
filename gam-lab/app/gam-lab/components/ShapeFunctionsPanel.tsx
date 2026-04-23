@@ -7,7 +7,6 @@ import { InteractionHeatmap } from "./InteractionHeatmap";
 import { useShapeFunctionActions, type AlignSelectionMode } from "../hooks/useShapeFunctionActions";
 import ShapeFunctionsGridView from "./ShapeFunctionsGridView";
 import { computeShapeImportance } from "../lib/importance";
-import TourLabel from "./TourLabel";
 import { type ToolSettings } from "../hooks/useToolSettings";
 
 const ACTION_ICON_URLS = {
@@ -24,7 +23,6 @@ const ALIGN_ACTIONS: { value: AlignSelectionMode; label: string; shortLabel: str
 const EMPTY_FIXED_LINES: Array<{ id: string; knots: KnotSet }> = [];
 
 type Props = {
-  showTourLabels?: boolean;
   shapes: ShapeFunction[];
   trainData: TrainData;
   featureDescriptions?: Record<string, string>;
@@ -51,7 +49,6 @@ type Props = {
 };
 
 export default function ShapeFunctionsPanel({
-  showTourLabels = false,
   shapes,
   trainData,
   featureDescriptions,
@@ -129,6 +126,7 @@ export default function ShapeFunctionsPanel({
       const shape = baselineKnots[s.key] ?? { x: s.editableX ?? [], y: s.editableY ?? [] };
       rawByKey[s.key] = Math.max(0, computeShapeImportance(s, scatterX, shape));
     });
+    // computeShapeImportance returns contribution SD; normalized values are SD share.
     const total = Object.values(rawByKey).reduce((sum, value) => sum + value, 0);
     const normalizedByKey: Record<string, number> = {};
     Object.entries(rawByKey).forEach(([key, value]) => {
@@ -222,19 +220,7 @@ export default function ShapeFunctionsPanel({
 
   const viewModeToggle = (
     <div className={styles.panelEyebrowActions}>
-      <div className={`${styles.panelToggle} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
-        {showTourLabels ? (
-          <TourLabel
-            label="View mode"
-            title="Choose the editing lens"
-            description="Switch between focused editing of one shape and a scan across all shapes."
-            details={[
-              "Single view shows the active feature with the full editor and tool panel.",
-              "Grid view helps compare many feature shapes quickly and jump into one with a click.",
-            ]}
-            placement="top-right"
-          />
-        ) : null}
+      <div className={styles.panelToggle}>
         <button
           type="button"
           className={`${styles.panelToggleButton} ${viewMode === "single" ? styles.panelToggleButtonActive : ""}`}
@@ -254,7 +240,7 @@ export default function ShapeFunctionsPanel({
   );
 
   return (
-    <div className={`${styles.panel} ${styles.panelFillHeight} ${showTourLabels ? styles.tourFocus : ""}`}>
+    <div className={`${styles.panel} ${styles.panelFillHeight}`}>
       {viewMode === "grid" ? (
         <>
           <div className={styles.panelHeader}>
@@ -333,19 +319,7 @@ export default function ShapeFunctionsPanel({
             <div className={styles.panelHeader}>
               <div className={styles.featureControlRow}>
                 {shapeLegend}
-                <div className={`${styles.featureNavCentered} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
-                  {showTourLabels ? (
-                    <TourLabel
-                      label="Feature selector"
-                      title="Move between features"
-                      description="The selector and arrows change the active feature without leaving the editor."
-                      details={[
-                        "Each option shows whether the feature is continuous or categorical.",
-                        "The I value is the normalized importance score used for quick prioritization.",
-                      ]}
-                      placement="top-left"
-                    />
-                  ) : null}
+                <div className={styles.featureNavCentered}>
                   <button
                     type="button"
                     className={styles.navButtonInline}
@@ -362,10 +336,12 @@ export default function ShapeFunctionsPanel({
                   >
                     {sortedShapeIndices.map((idx) => {
                       const sf = shapes[idx];
+                      const rawSd = featureImportance.rawByKey[sf.key] ?? 0;
+                      const sdShare = featureImportance.normalizedByKey[sf.key] ?? 0;
                       return (
                         <option key={sf.key} value={idx}>
                           {sf.label || sf.key || `x${idx + 1}`}
-                          {` — I=${formatImportance(featureImportance.normalizedByKey[sf.key] ?? 0)}`}
+                          {` — SD=${formatImportance(rawSd)} (${(sdShare * 100).toFixed(1)}%)`}
                         </option>
                       );
                     })}
@@ -386,36 +362,10 @@ export default function ShapeFunctionsPanel({
               <p className={styles.featureDescription}>{featureDescriptions[partial.key]}</p>
             ) : null}
             <div className={styles.plotWithActionsRow}>
-              <div className={`${styles.plotArea} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
-                {showTourLabels ? (
-                  <TourLabel
-                    label="Plot"
-                    title="Edit directly on the shape"
-                    description="Most edits happen in the plot itself: drag, select, smooth, or inspect the current curve against earlier states."
-                    details={[
-                      "Continuous features let you drag knots and apply selection-based actions.",
-                      "Categorical features update bar heights directly.",
-                      "Initial, previous, and current lines help you see what changed.",
-                    ]}
-                    placement="top-left"
-                  />
-                ) : null}
+              <div className={styles.plotArea}>
                 {plot}
               </div>
-              <div className={`${styles.actionsScroll} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
-                {showTourLabels ? (
-                <TourLabel
-                  label="Tools"
-                  title="Adjust how edits behave"
-                  description="The tool rail controls navigation, drag or smoothing behavior, and selection-based operations."
-                    details={[
-                      "Pan mode changes the interaction from editing to navigation.",
-                      "Continuous features expose drag and smooth settings.",
-                      "Selection actions apply constraints or bulk edits to the current selection.",
-                    ]}
-                  placement="top-right"
-                />
-              ) : null}
+              <div className={styles.actionsScroll}>
                 <div className={styles.actionsStack}>
                   <div className={styles.actionsGroup}>
                     <span className={styles.actionsGroupLabel}>navigate</span>
@@ -586,19 +536,7 @@ export default function ShapeFunctionsPanel({
                 </div>
               </div>
             </div>
-            <div className={`${styles.shapePanelFooter} ${styles.tourLabelAnchor}`}>
-              {showTourLabels ? (
-                <TourLabel
-                  label="Undo / Save"
-                  title="Commit or revisit edits"
-                  description="Use these actions to step backward, restore a change, or save the edited model snapshot."
-                  details={[
-                    "Undo and redo operate on the recorded edit history.",
-                    "Save writes the current edited state as a reusable model snapshot.",
-                  ]}
-                  placement="top-right"
-                />
-              ) : null}
+            <div className={styles.shapePanelFooter}>
               <div className={styles.shapeEditActions}>
                 <button type="button" className={styles.undoButton} onClick={onUndo} disabled={!canUndo}>
                   Undo

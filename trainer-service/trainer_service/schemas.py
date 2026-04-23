@@ -15,8 +15,6 @@ class TrainRequest(BaseModel):
     model_type: str = "igann_interactive"
     center_shapes: bool = False
     selected_features: List[str] = []
-    selected_interactions: List[str] | None = None
-    selected_operations: List[Dict] = []
     seed: int = 3
     points: int | None = 250
     n_estimators: int = 100
@@ -25,3 +23,4 @@ class TrainRequest(BaseModel):
     elm_alpha: float = 1
     early_stopping: int = 50
     scale_y: bool = True
+    sample_size: int | None = None

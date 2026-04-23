@@ -53,16 +53,19 @@ export type ModelInfo = {
   points: number;
 };
 
-// One versioned snapshot of shape functions produced by a training call.
+// One versioned snapshot of shape functions produced by a training call or manual save.
 export type ShapeFunctionVersion = {
   versionId: string;        // timestamp-based unique id
   timestamp: number;        // ms since epoch
-  source: "train";
+  source: "train" | "edit";
   center_shapes: boolean;
   intercept: number;
   trainMetrics: MetricSummary;
   testMetrics: MetricSummary;
   shapes: ShapeFunction[];
+  modelInfo?: ModelInfo;    // attached at save time for comparison
+  isEdited?: boolean;       // true if shapes contain user edits
+  label?: string;           // optional user-facing name
 };
 
 // Full API response: model info + separated data + one version snapshot.

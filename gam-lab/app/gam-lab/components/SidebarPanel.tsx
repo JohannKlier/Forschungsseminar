@@ -1,7 +1,6 @@
 import { Dispatch, SetStateAction, useEffect, useMemo, useRef } from "react";
 import styles from "../page.module.css";
-import { HistoryEntry, KnotSet, MetricWarning, ShapeFunction, SidebarTab, TrainData } from "../types";
-import TourLabel from "./TourLabel";
+import { HistoryEntry, KnotSet, MetricSummary, MetricWarning, ModelInfo, ShapeFunction, ShapeFunctionVersion, SidebarTab, TrainData } from "../types";
 import FeatureMiniHistogram from "./FeatureMiniHistogram";
 import { InteractionHeatmap } from "./InteractionHeatmap";
 
@@ -283,8 +282,95 @@ function FeatureDistributionsPanel({
 }
 
 
+function MetricLine({ label, value }: { label: string; value: number | null | undefined }) {
+  if (value == null) return null;
+  return (
+    <div className={styles.modelInfoRow}>
+      <span className={styles.modelInfoKey}>{label}</span>
+      <span className={styles.modelInfoVal}>{value.toFixed(4)}</span>
+    </div>
+  );
+}
+
+function ModelInfoPanel({ modelInfo, version }: { modelInfo: ModelInfo; version: ShapeFunctionVersion }) {
+  const rows: [string, string | number | boolean][] = [
+    ["Dataset",        modelInfo.dataset],
+    ["Model type",     modelInfo.model_type],
+    ["Task",           modelInfo.task],
+    ["n_estimators",   modelInfo.n_estimators],
+    ["boost_rate",     modelInfo.boost_rate],
+    ["init_reg",       modelInfo.init_reg],
+    ["elm_alpha",      modelInfo.elm_alpha],
+    ["early_stopping", modelInfo.early_stopping],
+    ["seed",           modelInfo.seed],
+    ["scale_y",        String(modelInfo.scale_y)],
+    ["center_shapes",  String(version.center_shapes)],
+    ["shape_points",   modelInfo.points],
+    ["intercept",      version.intercept.toPrecision(6)],
+  ];
+
+  const trainM: MetricSummary = version.trainMetrics;
+  const testM: MetricSummary  = version.testMetrics;
+
+  return (
+    <div className={styles.modelInfoPanel}>
+      <p className={styles.settingsLabel}>Hyperparameters</p>
+      <div className={styles.modelInfoTable}>
+        {rows.map(([k, v]) => (
+          <div key={k} className={styles.modelInfoRow}>
+            <span className={styles.modelInfoKey}>{k}</span>
+            <span className={styles.modelInfoVal}>{String(v)}</span>
+          </div>
+        ))}
+      </div>
+
+      {modelInfo.selected_features && modelInfo.selected_features.length > 0 && (
+        <>
+          <p className={styles.settingsLabel} style={{ marginTop: "0.75rem" }}>
+            Features ({modelInfo.selected_features.length})
+          </p>
+          <div className={styles.modelInfoFeatures}>
+            {modelInfo.selected_features.map((f) => (
+              <span key={f} className={styles.modelInfoFeatureTag}>{f}</span>
+            ))}
+          </div>
+        </>
+      )}
+
+      <p className={styles.settingsLabel} style={{ marginTop: "0.75rem" }}>Train metrics</p>
+      <div className={styles.modelInfoTable}>
+        <MetricLine label="RMSE"      value={trainM.rmse} />
+        <MetricLine label="MAE"       value={trainM.mae} />
+        <MetricLine label="R²"        value={trainM.r2} />
+        <MetricLine label="Accuracy"  value={trainM.acc} />
+        <MetricLine label="F1"        value={trainM.f1} />
+        <MetricLine label="Precision" value={trainM.precision} />
+        <MetricLine label="Recall"    value={trainM.recall} />
+        <div className={styles.modelInfoRow}>
+          <span className={styles.modelInfoKey}>n</span>
+          <span className={styles.modelInfoVal}>{trainM.count}</span>
+        </div>
+      </div>
+
+      <p className={styles.settingsLabel} style={{ marginTop: "0.75rem" }}>Test metrics</p>
+      <div className={styles.modelInfoTable}>
+        <MetricLine label="RMSE"      value={testM.rmse} />
+        <MetricLine label="MAE"       value={testM.mae} />
+        <MetricLine label="R²"        value={testM.r2} />
+        <MetricLine label="Accuracy"  value={testM.acc} />
+        <MetricLine label="F1"        value={testM.f1} />
+        <MetricLine label="Precision" value={testM.precision} />
+        <MetricLine label="Recall"    value={testM.recall} />
+        <div className={styles.modelInfoRow}>
+          <span className={styles.modelInfoKey}>n</span>
+          <span className={styles.modelInfoVal}>{testM.count}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 type Props = {
-  showTourLabels?: boolean;
   sidebarTab: SidebarTab;
   setSidebarTab: Dispatch<SetStateAction<SidebarTab>>;
   metricWarning: MetricWarning | null;
@@ -299,10 +385,11 @@ type Props = {
   selectedPointIndices: number[];
   activeFeatureCategories: string[] | null;
   intercept?: number | null;
+  modelInfo?: ModelInfo | null;
+  currentVersion?: ShapeFunctionVersion | null;
 };
 
 export default function SidebarPanel({
-  showTourLabels = false,
   sidebarTab,
   setSidebarTab,
   metricWarning,
@@ -317,30 +404,19 @@ export default function SidebarPanel({
   selectedPointIndices,
   activeFeatureCategories,
   intercept,
+  modelInfo,
+  currentVersion,
 }: Props) {
   const formattedIntercept = typeof intercept === "number" && Number.isFinite(intercept)
     ? intercept.toPrecision(8)
     : "n/a";
 
   return (
-    <div className={`${styles.settingsRail} ${showTourLabels ? styles.tourFocus : ""}`}>
+    <div className={styles.settingsRail}>
       <div className={styles.sidebarHeader}>
         <span className={styles.logo}>GAM Lab</span>
       </div>
-      <div className={`${styles.sidebarTabs} ${showTourLabels ? styles.tourLabelAnchor : ""}`}>
-        {showTourLabels ? (
-          <TourLabel
-            label="Tabs"
-            title="Switch the sidebar mode"
-            description="The sidebar has one mode for live feedback and another for reviewing edits."
-            details={[
-              "Edit shows warnings when the latest action hurts the live fit.",
-              "History lists recorded edit actions and lets you prune them.",
-              "Features shows the raw feature distributions from the dataset.",
-            ]}
-            placement="top-left"
-          />
-        ) : null}
+      <div className={styles.sidebarTabs}>
         <button
           type="button"
           className={`${styles.sidebarTabButton} ${sidebarTab === "edit" ? styles.sidebarTabButtonActive : ""}`}
@@ -373,19 +449,7 @@ export default function SidebarPanel({
             </div>
           </div>
           <div className={styles.settingsSection}>
-            <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
-              {showTourLabels ? (
-                <TourLabel
-                  label="Warnings"
-                  title="Watch for harmful edits"
-                  description="The sidebar warns only when the latest applied action meaningfully worsens the live fit."
-                  details={[
-                    "Warnings compare the current edit state against the state just before the latest action.",
-                    "If no warning is shown, the latest action stayed within the guardrail.",
-                  ]}
-                  placement="top-left"
-                />
-              ) : null}
+            <div>
               <p className={styles.settingsLabel}>Warnings</p>
               {metricWarning ? (
                 <div className={styles.warningCard} role="alert" aria-live="polite">
@@ -420,19 +484,7 @@ export default function SidebarPanel({
           </div>
         </>
       ) : sidebarTab === "history" ? (
-        <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
-          {showTourLabels ? (
-            <TourLabel
-              label="Edit history"
-              title="Inspect and remove recorded edits"
-              description="Every recorded action is grouped by feature so you can understand how the current state was built."
-              details={[
-                "Deleting an older history item also removes later entries for the same feature.",
-                "That cascade happens because later edits depend on the earlier state.",
-              ]}
-              placement="top-left"
-            />
-          ) : null}
+        <div>
           <HistoryPanel
             history={history}
             formatHistoryAction={formatHistoryAction}
@@ -441,20 +493,7 @@ export default function SidebarPanel({
           />
         </div>
       ) : (
-        <div className={showTourLabels ? styles.tourLabelAnchor : ""}>
-          {showTourLabels ? (
-            <TourLabel
-              label="Feature index"
-              title="See the dataset behind each feature"
-              description="This tab lists all features and shows a compact view of their distribution in the training data."
-              details={[
-                "Continuous features use mini histograms.",
-                "Categorical features use per-category bars.",
-                "These cards are informational summaries of the training data.",
-              ]}
-              placement="top-left"
-            />
-          ) : null}
+        <div>
           <FeatureDistributionsPanel
             shapes={shapes}
             trainData={trainData}

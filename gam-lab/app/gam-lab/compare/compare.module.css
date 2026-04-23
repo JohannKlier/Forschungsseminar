@@ -1,0 +1,221 @@
+.page {
+  --ink: #14213d;
+  --muted: #52627a;
+  --line: rgba(20, 33, 61, 0.12);
+  --a: #2563eb;
+  --b: #f25f4c;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #f0eadf 0%, #f7f3ea 48%, #edf3f6 100%);
+  font-family: "Space Grotesk", "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  color: var(--ink);
+  padding: 1.5rem 2rem 3rem;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+.back {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.6);
+}
+.back:hover { background: rgba(255,255,255,0.9); }
+
+.title { margin: 0; font-size: 1.5rem; font-weight: 700; }
+
+/* ─── Slots ───────────────────────────────────────────────── */
+.slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.75rem;
+}
+
+.slotPanel {
+  background: rgba(255,255,255,0.8);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.slotA { border-color: rgba(37,99,235,0.3); }
+.slotB { border-color: rgba(242,95,76,0.3); }
+
+.slotHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.slotLabel { font-weight: 700; font-size: 0.95rem; }
+
+.modeToggle {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.modeBtn {
+  font-family: inherit;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.7rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted);
+}
+.modeBtnActive { background: var(--ink); color: #fff; }
+
+.loadSection { display: flex; flex-direction: column; gap: 0.5rem; }
+
+.slotStatus { font-size: 0.82rem; color: var(--muted); font-style: italic; }
+.slotError  { font-size: 0.82rem; color: #dc2626; }
+.slotLoaded { font-size: 0.82rem; color: #16a34a; font-weight: 500; }
+
+/* ─── Train form ──────────────────────────────────────────── */
+.trainForm { display: flex; flex-direction: column; gap: 0.45rem; }
+
+.formRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.formLabel {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-weight: 500;
+  width: 100px;
+  flex-shrink: 0;
+}
+
+.formSelect, .formInput {
+  font-family: inherit;
+  font-size: 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0.25rem 0.4rem;
+  background: #fff;
+  color: var(--ink);
+  flex: 1;
+}
+
+.trainBtn {
+  font-family: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  padding: 0.45rem 1rem;
+  margin-top: 0.25rem;
+  background: var(--ink);
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.trainBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+.trainBtn:hover:not(:disabled) { background: #0f172a; }
+
+/* ─── Legend ──────────────────────────────────────────────── */
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.dotA { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex-shrink: 0; }
+.dotB { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--b); flex-shrink: 0; }
+
+/* ─── Metrics ─────────────────────────────────────────────── */
+.metricsRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.section {
+  background: rgba(255,255,255,0.75);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.sectionTitle { margin: 0 0 1rem; font-size: 1rem; font-weight: 700; }
+
+.metricsTable { border-collapse: collapse; font-size: 0.88rem; }
+.metricsTable th {
+  text-align: left;
+  padding: 0.3rem 1.2rem 0.3rem 0;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.metricsTable td { padding: 0.3rem 1.2rem 0.3rem 0; border-bottom: 1px solid var(--line); }
+.metricLabel { font-weight: 500; }
+.metricVal   { font-variant-numeric: tabular-nums; }
+.colA { color: var(--a); }
+.colB { color: var(--b); }
+.up   { color: #16a34a; font-weight: 600; }
+.down { color: #dc2626; font-weight: 600; }
+
+/* ─── Shape grid ──────────────────────────────────────────── */
+.grid { display: flex; flex-wrap: wrap; gap: 1rem; }
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cardTitle {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.missing { font-size: 0.75rem; color: #f59e0b; font-style: italic; }
+.noData  { font-size: 0.78rem; color: var(--muted); font-style: italic; padding: 1rem; }
+
+/* ─── SVG ─────────────────────────────────────────────────── */
+.chart    { display: block; }
+.axis     { stroke: rgba(20,33,61,0.25); stroke-width: 1; }
+.tick     { stroke: rgba(20,33,61,0.25); stroke-width: 1; }
+.zeroLine { stroke: rgba(20,33,61,0.15); stroke-width: 1; stroke-dasharray: 3 3; }
+.tickLabel { font-size: 9px; fill: #52627a; font-family: inherit; }
+.lineA { stroke: var(--a); stroke-width: 2; opacity: 0.85; }
+.lineB { stroke: var(--b); stroke-width: 2; opacity: 0.85; }
+.barA  { fill: var(--a); opacity: 0.75; }
+.barB  { fill: var(--b); opacity: 0.75; }
+
+/* ─── Empty ───────────────────────────────────────────────── */
+.empty {
+  margin-top: 4rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.95rem;
+}

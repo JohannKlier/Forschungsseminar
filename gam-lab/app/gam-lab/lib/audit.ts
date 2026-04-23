@@ -16,12 +16,11 @@ export type AuditQueuedEvent = AuditEventInput & {
 export type AuditIdentity = {
   userId: string;
   sessionId: string;
-  participantId?: string;
 };
 
 export type AuditLogFn = (event: AuditEventInput) => void;
 
-export const AUDIT_USER_COOKIE = "gam-lab-user-id";
+export const AUDIT_CODE_STORAGE_KEY = "gam-lab-kuerzel";
 export const AUDIT_SESSION_STORAGE_KEY = "gam-lab-session-id";
 
 export const createAuditId = () => {
@@ -29,12 +28,6 @@ export const createAuditId = () => {
     return crypto.randomUUID();
   }
   return `audit-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-};
-
-export const getParticipantIdFromLocation = () => {
-  if (typeof window === "undefined") return undefined;
-  const raw = new URLSearchParams(window.location.search).get("pid")?.trim();
-  return raw ? raw : undefined;
 };
 
 export const getCurrentPage = () => {
@@ -47,4 +40,9 @@ export const sanitizeAuditText = (value: string | null | undefined, maxLength = 
   const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized) return undefined;
   return normalized.slice(0, maxLength);
+};
+
+export const sanitizeKuerzel = (value: string): string | null => {
+  const cleaned = value.trim().replace(/[^a-zA-Z0-9._-]/g, "-").slice(0, 30);
+  return cleaned || null;
 };
