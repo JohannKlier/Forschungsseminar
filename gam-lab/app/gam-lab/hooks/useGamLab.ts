@@ -902,5 +902,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     savedModels,
     saveSnapshot,
     clearSavedModels,
+    handleModelSelect,
   };
 };

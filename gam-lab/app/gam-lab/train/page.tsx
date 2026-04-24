@@ -9,6 +9,7 @@ import FeatureMiniHistogram from "../components/FeatureMiniHistogram";
 import styles from "../page.module.css";
 import trainStyles from "./train.module.css";
 import { useGamLab } from "../hooks/useGamLab";
+import { listModels } from "../lib/modelApi";
 import { useSidebarActions } from "../hooks/useSidebarActions";
 import { useToolSettings } from "../hooks/useToolSettings";
 import { useAuditLogger } from "../hooks/useAuditLogger";
@@ -98,7 +99,13 @@ export default function TrainPage() {
     currentVersion,
     trainData,
     modelInfo,
+    handleModelSelect,
   } = useGamLab({ auditLogger: logEvent });
+
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  useEffect(() => {
+    listModels().then(setAvailableModels).catch(() => {});
+  }, []);
 
   useEffect(() => {
     logEvent({
@@ -469,6 +476,26 @@ export default function TrainPage() {
 
           {!result && (
             <aside className={trainStyles.preTrainSidebar}>
+              {availableModels.length > 0 && (
+                <div className={trainStyles.preTrainSidebarSection}>
+                  <p className={trainStyles.preTrainSectionLabel}>Bestehendes Modell laden</p>
+                  <div className={trainStyles.field}>
+                    <select
+                      className={trainStyles.select}
+                      defaultValue=""
+                      onChange={(e) => {
+                        if (e.target.value) void handleModelSelect(`model:${e.target.value}`);
+                      }}
+                    >
+                      <option value="" disabled>Modell auswählen…</option>
+                      {availableModels.map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
               {selectedDataset.id === "mimic4_mean_100_full" && (
                 <div className={trainStyles.preTrainSidebarSection}>
                   <p className={trainStyles.preTrainSectionLabel}>Dataset options</p>
@@ -592,7 +619,6 @@ export default function TrainPage() {
                   activeKnots={knots}
                   selectedPointIndices={selectedKnots}
                   activeFeatureCategories={partial.categories ?? null}
-                  intercept={currentVersion?.intercept ?? null}
                   modelInfo={modelInfo}
                   currentVersion={currentVersion}
                 />

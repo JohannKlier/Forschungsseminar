@@ -306,7 +306,6 @@ function ModelInfoPanel({ modelInfo, version }: { modelInfo: ModelInfo; version:
     ["scale_y",        String(modelInfo.scale_y)],
     ["center_shapes",  String(version.center_shapes)],
     ["shape_points",   modelInfo.points],
-    ["intercept",      version.intercept.toPrecision(6)],
   ];
 
   const trainM: MetricSummary = version.trainMetrics;
@@ -384,7 +383,6 @@ type Props = {
   activeKnots: KnotSet | null;
   selectedPointIndices: number[];
   activeFeatureCategories: string[] | null;
-  intercept?: number | null;
   modelInfo?: ModelInfo | null;
   currentVersion?: ShapeFunctionVersion | null;
 };
@@ -403,14 +401,9 @@ export default function SidebarPanel({
   activeKnots,
   selectedPointIndices,
   activeFeatureCategories,
-  intercept,
   modelInfo,
   currentVersion,
 }: Props) {
-  const formattedIntercept = typeof intercept === "number" && Number.isFinite(intercept)
-    ? intercept.toPrecision(8)
-    : "n/a";
-
   return (
     <div className={styles.settingsRail}>
       <div className={styles.sidebarHeader}>
@@ -441,13 +434,6 @@ export default function SidebarPanel({
       </div>
       {sidebarTab === "edit" ? (
         <>
-          <div className={styles.settingsSection}>
-            <p className={styles.settingsLabel}>Testing</p>
-            <div className={styles.warningIdleCard}>
-              <p className={styles.warningIdleTitle}>Intercept</p>
-              <p className={styles.settingsValue}>{formattedIntercept}</p>
-            </div>
-          </div>
           <div className={styles.settingsSection}>
             <div>
               <p className={styles.settingsLabel}>Warnings</p>

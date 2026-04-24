@@ -1,19 +1,17 @@
 # Forschungsseminar
 
+> **Repository visibility:** This repository should be **private** — it contains the MIMIC-IV derived dataset.
+
 This repository contains two parts:
 
 - `gam-lab/`: Next.js + React frontend for the GAM lab UI.
 - `trainer-service/`: Python FastAPI service for dataset preprocessing and model training.
 
-## Run Everything In Development
+## Prerequisites
 
-From the repository root:
-
-```bash
-./dev.sh
-```
-
-This starts the trainer service on `http://localhost:4001` and the frontend on `http://localhost:3000`.
+- **Node.js** ≥ 18.17 (check with `node -v`)
+- **Python** ≥ 3.9 (check with `python3 --version`)
+- **Git** — required for installing the `igann` package from GitHub (`pip install` fetches it via git)
 
 ## Frontend (gam-lab)
 
@@ -25,38 +23,12 @@ npm run dev
 
 Then open `http://localhost:3000`.
 
-### Frontend environment
-
-For local development the audit log defaults to filesystem storage under `gam-lab/data/audit`.
-For deployment, switch the audit log to Postgres:
-
-```bash
-AUDIT_STORAGE=postgres
-DATABASE_URL=postgres://...
-# Set when your managed Postgres provider requires TLS.
-AUDIT_DATABASE_SSL=require
-TRAINER_URL=http://trainer-service:4001
-NEXT_PUBLIC_TRAINER_URL=http://trainer-service:4001
-```
-
-The audit schema is created automatically by the Next.js server on first use.
-Raw form values are no longer logged unless an element explicitly opts in with `data-audit-value="allow"`.
 
 ## Trainer service (trainer-service)
 
-You need the datasets before running the frontend or backend:
-
-- Core package code now lives under `trainer-service/trainer_service/`:
-  - `api.py`: FastAPI routes and app wiring.
-  - `training.py`: training orchestration and shape logic.
-  - `preprocessing/`: dataset-specific preprocessing modules.
-  - `datasets.py`: dataset download helpers.
-  - `generate_models.py`: preset model generation.
-  - `storage.py` and `model_store.py`: saved-model and preset-model persistence.
-
 ```bash
 cd trainer-service
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 # Windows (PowerShell): .venv\Scripts\Activate.ps1
 # Windows (cmd.exe): .venv\Scripts\activate.bat
@@ -68,6 +40,7 @@ uvicorn trainer_service.api:app --reload --port 4001
 
 The API will be available at `http://localhost:4001` (or set `NEXT_PUBLIC_TRAINER_URL` / `TRAINER_URL` in `gam-lab` to match another port).
 The MIMIC-IV option expects `mimic4_mean_100_full.csv` at `trainer-service/data/mimic4_mean_100_full.csv`.
+This file is checked into the repository (repo must be private) — no separate download needed.
 
 Trainer saved models default to filesystem storage under `trainer-service/saved_models`.
 For deployment, switch them to Postgres:
@@ -86,36 +59,3 @@ The trainer creates the saved-model table automatically on first use.
 - Treat `trainer-service/data` and `trainer-service/models` as build artifacts and bake them into the image.
 - Treat `trainer-service/saved_models` as local-development fallback storage only.
 - Prefer platform-managed logs from `stdout`/`stderr` over application log files.
-
-## Notes
-
-- Frontend talks directly to the trainer service, so run both for full functionality.
-
-## Ordnerstruktur
-
-```
-Forschungsseminar/
-├── dev.sh                  # Startet Frontend + Trainer-Service gleichzeitig
-├── docs/                   # Projektdokumentation (z. B. User-Study-Protokoll)
-├── literatur/              # Referenz-PDFs für das Forschungsseminar
-│
-├── gam-lab/                # Next.js 16 + React 19 Frontend
-│   └── app/
-│       ├── api/            # Server-seitige Next.js Route-Handler
-│       ├── gam-lab/        # Haupt-Feature: interaktiver GAM-Editor
-│       │   ├── train/      # Trainingseinstellungs-Seite
-│       │   ├── compare/    # Modellvergleich-Seite
-│       │   ├── components/ # React-Komponenten (Plots, Editor, Sidebar)
-│       │   ├── hooks/      # React-Hooks (State, Aktionen, Audit-Logging)
-│       │   ├── lib/        # Pure Hilfsfunktionen (API-Clients, Kurvenlogik)
-│       │   ├── types/      # Gemeinsame TypeScript-Typen
-│       │   └── workers/    # Web Worker für Berechnungen im Hintergrund
-│       └── logs/           # Audit-Log-Ansichts-Seite
-│
-└── trainer-service/        # Python FastAPI Backend
-    ├── trainer_service/    # Haupt-Package (API, Training, Schemas, Persistenz)
-    │   └── preprocessing/  # Dataset-spezifische Vorverarbeitungsmodule
-    ├── data/               # Eingabe-Datensätze (bike.csv, mimic4 …)
-    ├── models/             # Vorberechnete Preset-Modell-JSONs
-    └── saved_models/       # Vom Benutzer gespeicherte Modell-JSONs (lokal)
-```

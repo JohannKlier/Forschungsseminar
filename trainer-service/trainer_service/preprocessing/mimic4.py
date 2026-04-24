@@ -4,12 +4,38 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 
 from trainer_service.paths import DATA_DIR
 from trainer_service.preprocessing.common import sort_category_values
+
+
+# ── Winsorizer ───────────────────────────────────────────────────────────────
+# Clips each numeric column to [mean − n_sigma·σ, mean + n_sigma·σ] fitted on
+# training data.  Mirrors the feature_engine Winsorizer used in the notebook
+# (capping_method="gaussian", fold=4, tail="both") without adding a dependency.
+
+class GaussianWinsorizer(BaseEstimator, TransformerMixin):
+    def __init__(self, n_sigma: float = 4.0):
+        self.n_sigma = n_sigma
+
+    def fit(self, X, y=None):
+        arr = np.asarray(X, dtype=float)
+        self.lower_ = arr.mean(axis=0) - self.n_sigma * arr.std(axis=0)
+        self.upper_ = arr.mean(axis=0) + self.n_sigma * arr.std(axis=0)
+        return self
+
+    def transform(self, X):
+        clipped = np.clip(np.asarray(X, dtype=float), self.lower_, self.upper_)
+        if isinstance(X, pd.DataFrame):
+            return pd.DataFrame(clipped, index=X.index, columns=X.columns)
+        return clipped
+
+    def set_output(self, *, transform=None):
+        return self
 
 
 # ── Dataset constants ────────────────────────────────────────────────────────
@@ -141,10 +167,14 @@ def preprocess_mimic4_mean_100_full(seed: int, sample_size: int | None = None):
     for feature in cat_features:
         x_frame[feature] = x_frame[feature].astype(str).str.strip().replace({"nan": np.nan, "None": np.nan})
 
-    # ── 5. Impute ─────────────────────────────────────────────────────────────
-    # Numeric columns: median imputation (robust to outliers common in ICU data).
-    # Categorical columns: most-frequent imputation.
-    num_transformer = Pipeline([("num_imputer", SimpleImputer(strategy="median"))])
+    # ── 5. Impute → Winsorize ─────────────────────────────────────────────────
+    # Numeric:     median imputation (robust to outliers common in ICU data),
+    #              then Gaussian winsorization at ±4 σ (matches notebook pipeline).
+    # Categorical: most-frequent imputation.
+    num_transformer = Pipeline([
+        ("num_imputer",  SimpleImputer(strategy="median")),
+        ("winsorizer",   GaussianWinsorizer(n_sigma=4.0)),
+    ])
     cat_transformer = Pipeline([("cat_imputer", SimpleImputer(strategy="most_frequent"))])
 
     column_transformer = ColumnTransformer(
