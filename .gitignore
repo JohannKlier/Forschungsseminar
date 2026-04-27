@@ -3,9 +3,10 @@ literatur/
 docs/
 .vscode/
 .claude/
+.codex/
 
 # Local datasets
-trainer-service/data/
+trainer-service/trainer_service/data/*
 
 # Generated model artifacts
 trainer-service/saved_models/

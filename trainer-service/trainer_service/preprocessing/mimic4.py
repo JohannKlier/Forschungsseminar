@@ -134,6 +134,8 @@ def preprocess_mimic4_mean_100_full(seed: int, sample_size: int | None = None):
     if not data_path.exists():
         data_path = DATA_DIR / "mimic4_mean_100_full.csv"
     if not data_path.exists():
+        data_path = Path(__file__).resolve().parent.parent / "data" / "mimic4_mean_100_full.csv"
+    if not data_path.exists():
         raise FileNotFoundError("Missing mimic4_mean_100_full.csv in trainer-service/data.")
 
     df = pd.read_csv(data_path)

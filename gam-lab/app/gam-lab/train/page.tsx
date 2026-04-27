@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import ShapeFunctionsPanel from "../components/ShapeFunctionsPanel";
 import SidebarPanel from "../components/SidebarPanel";
@@ -34,7 +34,7 @@ type FeatureSummary =
     };
 
 
-export default function TrainPage() {
+function TrainPageInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const search = searchParams.toString();
@@ -629,5 +629,13 @@ export default function TrainPage() {
       </div>
     </div>
     </>
+  );
+}
+
+export default function TrainPage() {
+  return (
+    <Suspense>
+      <TrainPageInner />
+    </Suspense>
   );
 }

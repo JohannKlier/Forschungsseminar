@@ -106,7 +106,7 @@ const buildContrib = (
     });
   }
 
-  return interpolateFeature(scatterX, source);
+  return interpolateFeature(scatterX as number[], source);
 };
 
 const buildContribs = (

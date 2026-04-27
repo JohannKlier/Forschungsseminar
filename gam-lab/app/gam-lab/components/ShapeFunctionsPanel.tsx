@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useMemo, useState } from "react";
+import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import styles from "../page.module.css";
 import { KnotSet, ShapeFunction, TrainData } from "../types";
 import CategoricalShapePlot from "./CategoricalShapePlot";
@@ -82,6 +82,19 @@ export default function ShapeFunctionsPanel({
   const [panLocked, setPanLocked] = useState(false);
   const [spacePanActive, setSpacePanActive] = useState(false);
   const [viewMode, setViewMode] = useState<"single" | "grid">("single");
+  const [featureDropdownOpen, setFeatureDropdownOpen] = useState(false);
+  const featureDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!featureDropdownOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (featureDropdownRef.current && !featureDropdownRef.current.contains(e.target as Node)) {
+        setFeatureDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [featureDropdownOpen]);
   const partial = useMemo(() => shapes[activePartialIdx] ?? shapes[0] ?? null, [shapes, activePartialIdx]);
   const interactionMode: "select" | "zoom" = panLocked || spacePanActive ? "zoom" : "select";
   const isPanning = interactionMode === "zoom";
@@ -328,24 +341,42 @@ export default function ShapeFunctionsPanel({
                   >
                     ‹
                   </button>
-                  <select
-                    className={styles.featureSelect}
-                    value={activePartialIdx}
-                    onChange={(event) => setActivePartialIdx(Number(event.target.value))}
-                    aria-label="Feature"
-                  >
-                    {sortedShapeIndices.map((idx) => {
-                      const sf = shapes[idx];
-                      const rawSd = featureImportance.rawByKey[sf.key] ?? 0;
-                      const sdShare = featureImportance.normalizedByKey[sf.key] ?? 0;
-                      return (
-                        <option key={sf.key} value={idx}>
-                          {sf.label || sf.key || `x${idx + 1}`}
-                          {` — SD=${formatImportance(rawSd)} (${(sdShare * 100).toFixed(1)}%)`}
-                        </option>
-                      );
-                    })}
-                  </select>
+                  <div className={styles.featureDropdown} ref={featureDropdownRef}>
+                    <button
+                      type="button"
+                      className={styles.featureDropdownTrigger}
+                      onClick={() => setFeatureDropdownOpen((v) => !v)}
+                      aria-haspopup="listbox"
+                      aria-expanded={featureDropdownOpen}
+                    >
+                      <span className={styles.featureDropdownLabel}>
+                        {(() => { const sf = shapes[activePartialIdx]; return sf?.label || sf?.key || `x${activePartialIdx + 1}`; })()}
+                      </span>
+                      <span className={styles.featureDropdownPct}>
+                        {`${((featureImportance.normalizedByKey[shapes[activePartialIdx]?.key] ?? 0) * 100).toFixed(1)}%`}
+                      </span>
+                    </button>
+                    {featureDropdownOpen && (
+                      <ul className={styles.featureDropdownList} role="listbox">
+                        {sortedShapeIndices.map((idx) => {
+                          const sf = shapes[idx];
+                          const sdShare = featureImportance.normalizedByKey[sf.key] ?? 0;
+                          return (
+                            <li
+                              key={sf.key}
+                              role="option"
+                              aria-selected={idx === activePartialIdx}
+                              className={`${styles.featureDropdownItem} ${idx === activePartialIdx ? styles.featureDropdownItemActive : ""}`}
+                              onClick={() => { setActivePartialIdx(idx); setFeatureDropdownOpen(false); }}
+                            >
+                              <span>{sf.label || sf.key || `x${idx + 1}`}</span>
+                              <span className={styles.featureDropdownItemPct}>{`${(sdShare * 100).toFixed(1)}%`}</span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                   <button
                     type="button"
                     className={styles.navButtonInline}
@@ -408,57 +439,8 @@ export default function ShapeFunctionsPanel({
                         </button>
                       </div>
                       <div className={styles.toolTabPanel} role="tabpanel">
-                        {activeContinuousTool === "drag" ? (
+                        {activeContinuousTool === "smooth" && (
                           <>
-                            <span className={styles.actionSettingLabel}>Falloff curve</span>
-                            <div className={styles.actionChips}>
-                              {(
-                                [
-                                  { value: "gaussian", label: "Gaussian", icon: "G" },
-                                  { value: "linear", label: "Linear", icon: "L" },
-                                  { value: "sharp", label: "Sharp", icon: "S" },
-                                ] as const
-                              ).map(({ value, label }) => (
-                                <button
-                                  key={value}
-                                  type="button"
-                                  className={`${styles.actionChip} ${dragCurve === value ? styles.actionChipActive : ""}`}
-                                  onClick={() => setDragCurve(value)}
-                                  aria-label={label}
-                                  title={label}
-                                >
-                                  <span className={styles.actionChipIcon} aria-hidden="true">
-                                    {label.charAt(0)}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <span className={styles.actionSettingLabel}>Mode</span>
-                            <div className={styles.actionChips}>
-                              {(
-                                [
-                                  { value: "gaussian", label: "Gaussian", icon: "G" },
-                                  { value: "median", label: "Median", icon: "M" },
-                                  { value: "exponential", label: "Exponential", icon: "E" },
-                                ] as const
-                              ).map(({ value, label }) => (
-                                <button
-                                  key={value}
-                                  type="button"
-                                  className={`${styles.actionChip} ${smoothingAlgorithm === value ? styles.actionChipActive : ""}`}
-                                  onClick={() => setSmoothingAlgorithm(value)}
-                                  aria-label={label}
-                                  title={label}
-                                >
-                                  <span className={styles.actionChipIcon} aria-hidden="true">
-                                    {label.charAt(0)}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
                             <label className={styles.actionSettingLabel}>
                               <span>Range</span>
                               <span>{smoothingRangeMax}</span>
