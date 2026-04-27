@@ -3,6 +3,7 @@ literatur/
 docs/
 .vscode/
 .claude/
+.codex
 .codex/
 
 # Local datasets

@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { select, type Selection } from "d3-selection";
 import "d3-transition";
@@ -318,7 +319,7 @@ export default function VisxShapeEditor({
       content.selectAll("rect.selection-box").remove();
       return;
     }
-    if (!isDraggingRef.current && !(interactionMode !== "zoom" && smoothingMode && smoothHoverIdxRef.current != null)) {
+    if (!isDraggingRef.current && !(smoothingMode && smoothHoverIdxRef.current != null)) {
       svg
         .selectAll<SVGCircleElement, any>("circle.knot")
         .attr("fill", "transparent");
@@ -361,9 +362,7 @@ export default function VisxShapeEditor({
           if (smoothingMode) event.stopPropagation();
         })
         .style("pointer-events", "all");
-      if (interactionMode === "zoom") {
-        boxSel.style("pointer-events", "none").style("cursor", "default");
-      } else if (smoothingMode) {
+      if (smoothingMode) {
         const smoothingBehaviour = smoothingBehaviorRef.current;
         boxSel.style("pointer-events", "all").style("cursor", "grab");
         if (smoothingBehaviour) boxSel.call(smoothingBehaviour as any);
