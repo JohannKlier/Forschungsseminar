@@ -20,3 +20,4 @@ __pycache__/
 # Virtual environments
 trainer-service/.venv/
 .venv/
+path/to/file
