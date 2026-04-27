@@ -141,8 +141,14 @@ export default function CategoricalShapePlot({
       .attr("y", 0)
       .attr("width", width)
       .attr("height", height)
-      .attr("fill", "#f9fafb")
-      .attr("stroke", "none");
+      .attr("fill", interactionMode === "zoom" ? "#f2f8fb" : "#f9fafb")
+      .attr("stroke", "none")
+      .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
+      .on("click", () => {
+        if (interactionMode === "zoom") return;
+        if (isDraggingRef.current) return;
+        onSelectRef.current([]);
+      });
 
     const defs = root.selectAll("defs").data([null]).join("defs");
     defs
@@ -505,6 +511,7 @@ export default function CategoricalShapePlot({
         const yBase = yScale(Math.min(0, d.val));
         return Math.abs(y0 - yBase);
       });
+    const showSelection = interactionMode !== "zoom";
     const rectSel = bars
       .selectAll<SVGRectElement, any>("rect.cat-bar")
       .data(barData, (d: any) => d.idx)
@@ -517,6 +524,7 @@ export default function CategoricalShapePlot({
             .style("cursor", interactionMode === "zoom" ? "default" : "grab")
             .on("click", (event, d) => {
               if (interactionMode === "zoom") return;
+              event.stopPropagation();
               const multi = event.shiftKey || event.metaKey || event.ctrlKey;
               const current = selectedIdxsRef.current;
               const next = applyClickSelection({ current, idx: d.idx, multi: Boolean(multi), mode: "free" });
@@ -529,8 +537,8 @@ export default function CategoricalShapePlot({
     rectSel
       .attr("x", (d) => ((xScaleD3(d.cat) ?? pad.left) + xScaleD3.bandwidth() * 0.15))
       .attr("width", xScaleD3.bandwidth() * 0.7)
-      .attr("fill", (d) => (selectedIdxs.includes(d.idx) ? "rgba(14,165,233,0.95)" : "rgba(14,165,233,0.7)"))
-      .attr("stroke", (d) => (selectedIdxs.includes(d.idx) ? "#0c4a6e" : "#0b172a"))
+      .attr("fill", (d) => (showSelection && selectedIdxs.includes(d.idx) ? "rgba(14,165,233,0.95)" : "rgba(14,165,233,0.7)"))
+      .attr("stroke", (d) => (showSelection && selectedIdxs.includes(d.idx) ? "#0c4a6e" : "#0b172a"))
       .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
       .style("cursor", interactionMode === "zoom" ? "default" : "grab");
     rectSel
@@ -558,6 +566,7 @@ export default function CategoricalShapePlot({
             .style("cursor", interactionMode === "zoom" ? "default" : "grab")
             .on("click", (event, d) => {
               if (interactionMode === "zoom") return;
+              event.stopPropagation();
               const multi = event.shiftKey || event.metaKey || event.ctrlKey;
               const current = selectedIdxsRef.current;
               const next = applyClickSelection({ current, idx: d.idx, multi: Boolean(multi), mode: "free" });
@@ -569,7 +578,7 @@ export default function CategoricalShapePlot({
       );
     dotSel
       .attr("cx", (d) => ((xScaleD3(d.cat) ?? pad.left) + xScaleD3.bandwidth() * 0.15 + xScaleD3.bandwidth() * 0.35))
-      .attr("fill", (d) => (selectedIdxs.includes(d.idx) ? "#0c4a6e" : "#0ea5e9"))
+      .attr("fill", (d) => (showSelection && selectedIdxs.includes(d.idx) ? "#0c4a6e" : "#0ea5e9"))
       .attr("stroke", "#0b172a")
       .attr("stroke-width", 1)
       .style("pointer-events", interactionMode === "zoom" ? "none" : "all")
@@ -626,10 +635,23 @@ export default function CategoricalShapePlot({
     } else {
       svg.on(".zoom", null);
     }
+    svg.on("click", () => {
+      if (interactionMode === "zoom") return;
+      if (isDraggingRef.current) return;
+      onSelectRef.current([]);
+    });
   }, [categories, scatterX, knots, selectedIdxs, yRange.min, yRange.max, width, usableH, usableW, pad.top, pad.left, interactionMode]);
 
   return (
-    <div ref={containerRef} className={styles.chartFrame}>
+    <div
+      ref={containerRef}
+      className={`${styles.chartFrame} ${interactionMode === "zoom" ? styles.chartFramePanMode : ""}`}
+    >
+      {interactionMode === "zoom" ? (
+        <div className={styles.panModeBadge} aria-live="polite">
+          Pan mode
+        </div>
+      ) : null}
       <svg ref={svgRef} aria-label={title} />
     </div>
   );

@@ -28,7 +28,7 @@ export const useToolSettings = (): ToolSettings => {
   const [smoothAmount, setSmoothAmount] = useState(0.5);
   const [smoothingRangeMax, setSmoothingRangeMax] = useState(32);
   const [smoothingSpeed, setSmoothingSpeed] = useState(1);
-  const [smoothingAlgorithm, setSmoothingAlgorithm] = useState<SmoothingAlgorithm>("gaussian");
+  const [smoothingAlgorithm, setSmoothingAlgorithm] = useState<SmoothingAlgorithm>("tikhonov");
 
   return {
     activeContinuousTool,

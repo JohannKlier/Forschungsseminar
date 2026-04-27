@@ -49,9 +49,9 @@ const calcClassificationMetrics = (yTrue: number[], yPred: number[]): MetricSumm
   if (!pairs.length) return null;
   const yBin = pairs.map(({ y }) => (y > 0.5 ? 1 : 0));
   const pBin = pairs.map(({ p }) => (p > 0.5 ? 1 : 0));
-  const tp = yBin.reduce((sum, y, i) => sum + (y === 1 && pBin[i] === 1 ? 1 : 0), 0);
-  const fp = yBin.reduce((sum, y, i) => sum + (y === 0 && pBin[i] === 1 ? 1 : 0), 0);
-  const fn = yBin.reduce((sum, y, i) => sum + (y === 1 && pBin[i] === 0 ? 1 : 0), 0);
+  const tp = yBin.reduce((sum, y, i) => sum + (y === 1 && pBin[i] === 1 ? 1 : 0), 0 as number);
+  const fp = yBin.reduce((sum, y, i) => sum + (y === 0 && pBin[i] === 1 ? 1 : 0), 0 as number);
+  const fn = yBin.reduce((sum, y, i) => sum + (y === 1 && pBin[i] === 0 ? 1 : 0), 0 as number);
   const acc = yBin.filter((y, i) => y === pBin[i]).length / yBin.length;
   const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
   const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
@@ -730,8 +730,8 @@ export const useGamLab = (options: InitOptions = {}) => {
 
     const details = modelInfo.task === "classification"
       ? (() => {
-          const current = currentMetric.acc;
-          const previous = previousMetric.acc;
+          const current = currentMetric.acc ?? NaN;
+          const previous = previousMetric.acc ?? NaN;
           if (!Number.isFinite(current) || !Number.isFinite(previous)) return [];
           const delta = current - previous;
           return delta <= -0.015

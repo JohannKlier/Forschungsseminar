@@ -31,6 +31,7 @@ const normalizeLegacyModelPayload = (payload: Record<string, unknown>): TrainRes
         label: typeof partial.label === "string" ? partial.label : key,
         editableX: Array.isArray(partial.editableX) ? partial.editableX as number[] : undefined,
         editableY: Array.isArray(partial.editableY) ? partial.editableY as number[] : undefined,
+        editableZ: Array.isArray(partial.editableZ) ? partial.editableZ as number[][] : undefined,
         categories,
       };
     })
