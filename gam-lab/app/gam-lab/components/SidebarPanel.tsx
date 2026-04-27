@@ -1,4 +1,4 @@
-import { Dispatch, SetStateAction, useEffect, useMemo, useRef } from "react";
+import { Dispatch, SetStateAction, useEffect, useMemo, useRef, useState } from "react";
 import styles from "../page.module.css";
 import { HistoryEntry, KnotSet, MetricSummary, MetricWarning, ModelInfo, ShapeFunction, ShapeFunctionVersion, SidebarTab, TrainData } from "../types";
 import FeatureMiniHistogram from "./FeatureMiniHistogram";
@@ -12,13 +12,16 @@ function HistoryPanel({
   formatHistoryAction,
   formatHistoryDetail,
   onDeleteHistoryEntry,
+  countCascadingDeletes,
 }: {
   history: HistoryEntry[];
   formatHistoryAction: (action: string) => string;
   formatHistoryDetail: (entryIndex: number) => string | null;
   onDeleteHistoryEntry: (index: number) => void;
+  countCascadingDeletes: (index: number) => number;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [pendingDeleteIdx, setPendingDeleteIdx] = useState<number | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -38,6 +41,11 @@ function HistoryPanel({
     return result;
   }, [history]);
 
+  const confirmDelete = (index: number) => {
+    onDeleteHistoryEntry(index);
+    setPendingDeleteIdx(null);
+  };
+
   return (
     <div className={styles.historyScroll}>
       <p className={styles.settingsLabel}>History</p>
@@ -50,20 +58,51 @@ function HistoryPanel({
             </div>
             {entries.map(({ entry, index }) => {
               const detail = formatHistoryDetail(index);
+              const isPending = pendingDeleteIdx === index;
+              const cascades = isPending ? countCascadingDeletes(index) : 0;
               return (
                 <div key={`${entry.ts}-${entry.action}`} className={styles.historyItem}>
                   <div className={styles.historyActionRow}>
                     <span className={styles.settingsValue}>{formatHistoryAction(entry.action)}</span>
-                    <button
-                      type="button"
-                      className={styles.historyDeleteButton}
-                      onClick={() => onDeleteHistoryEntry(index)}
-                      aria-label="Delete history entry"
-                    >
-                      ×
-                    </button>
+                    {isPending ? (
+                      <>
+                        <button
+                          type="button"
+                          className={styles.historyDeleteButton}
+                          style={{ background: "rgba(242,95,76,0.15)", borderColor: "rgba(242,95,76,0.4)" }}
+                          onClick={() => confirmDelete(index)}
+                          aria-label="Confirm delete"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.historyDeleteButton}
+                          onClick={() => setPendingDeleteIdx(null)}
+                          aria-label="Cancel delete"
+                        >
+                          ×
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className={styles.historyDeleteButton}
+                        onClick={() => setPendingDeleteIdx(index)}
+                        aria-label="Delete history entry"
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
-                  {detail ? (
+                  {isPending && (
+                    <span className={styles.historyDetail} style={{ color: "rgba(185,28,28,0.9)" }}>
+                      {cascades > 0
+                        ? `Also removes ${cascades} later entr${cascades === 1 ? "y" : "ies"} for this feature. Confirm?`
+                        : "Delete this entry?"}
+                    </span>
+                  )}
+                  {!isPending && detail ? (
                     <span className={styles.historyDetail}>{detail}</span>
                   ) : null}
                 </div>
@@ -377,6 +416,7 @@ type Props = {
   formatHistoryAction: (action: string) => string;
   formatHistoryDetail: (entryIndex: number) => string | null;
   onDeleteHistoryEntry: (index: number) => void;
+  countCascadingDeletes: (index: number) => number;
   shapes: ShapeFunction[];
   trainData: TrainData;
   activeFeatureKey: string | null;
@@ -395,6 +435,7 @@ export default function SidebarPanel({
   formatHistoryAction,
   formatHistoryDetail,
   onDeleteHistoryEntry,
+  countCascadingDeletes,
   shapes,
   trainData,
   activeFeatureKey,
@@ -476,6 +517,7 @@ export default function SidebarPanel({
             formatHistoryAction={formatHistoryAction}
             formatHistoryDetail={formatHistoryDetail}
             onDeleteHistoryEntry={onDeleteHistoryEntry}
+            countCascadingDeletes={countCascadingDeletes}
           />
         </div>
       ) : (

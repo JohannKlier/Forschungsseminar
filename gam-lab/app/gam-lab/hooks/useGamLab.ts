@@ -128,6 +128,7 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [models, setModels] = useState<Models | null>(null);
   const workerRef = useRef<Worker | null>(null);
   const workerDebounceRef = useRef<number | null>(null);
+  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, []);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyCursor, setHistoryCursor] = useState(0);
   const persistedEditsRef = useRef<Record<string, KnotSet>>({});
@@ -282,45 +283,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
-  // Initialize from landing-page query parameters.
-  useEffect(() => {
-    if (options.initialTrain) {
-      setDataset(options.initialTrain.dataset);
-      setModelType(options.initialTrain.model_type);
-      setCenterShapes(options.initialTrain.center_shapes);
-      setSelectedFeatures(options.initialTrain.selected_features ?? []);
-      setShapePoints(options.initialTrain.points);
-      setSeed(options.initialTrain.seed);
-      setNEstimators(options.initialTrain.n_estimators);
-      setBoostRate(options.initialTrain.boost_rate);
-      setInitReg(options.initialTrain.init_reg);
-      setElmAlpha(options.initialTrain.elm_alpha);
-      setEarlyStopping(options.initialTrain.early_stopping);
-      setScaleY(options.initialTrain.scale_y);
-      train({
-        dataset: options.initialTrain.dataset,
-        model_type: options.initialTrain.model_type,
-        center_shapes: options.initialTrain.center_shapes,
-        selected_features: options.initialTrain.selected_features ?? [],
-        points: options.initialTrain.points,
-        seed: options.initialTrain.seed,
-        n_estimators: options.initialTrain.n_estimators,
-        boost_rate: options.initialTrain.boost_rate,
-        init_reg: options.initialTrain.init_reg,
-        elm_alpha: options.initialTrain.elm_alpha,
-        early_stopping: options.initialTrain.early_stopping,
-        scale_y: options.initialTrain.scale_y,
-      });
-      return;
-    }
-    if (options.initialModel && options.initialModel !== "undefined") {
-      handleModelSelect(options.initialModel);
-      return;
-    }
-    setModelSource("train");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // Load a model when the selector changes.
   const handleModelSelect = async (value: string) => {
     logEvent({
@@ -385,6 +347,48 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
+  // Stable refs used only in the mount-time init effect — avoids stale-closure lint suppression.
+  const initTrainRef = useRef(train);
+  const initModelSelectRef = useRef(handleModelSelect);
+
+  // Initialize from landing-page query parameters (runs once on mount).
+  useEffect(() => {
+    if (options.initialTrain) {
+      setDataset(options.initialTrain.dataset);
+      setModelType(options.initialTrain.model_type);
+      setCenterShapes(options.initialTrain.center_shapes);
+      setSelectedFeatures(options.initialTrain.selected_features ?? []);
+      setShapePoints(options.initialTrain.points);
+      setSeed(options.initialTrain.seed);
+      setNEstimators(options.initialTrain.n_estimators);
+      setBoostRate(options.initialTrain.boost_rate);
+      setInitReg(options.initialTrain.init_reg);
+      setElmAlpha(options.initialTrain.elm_alpha);
+      setEarlyStopping(options.initialTrain.early_stopping);
+      setScaleY(options.initialTrain.scale_y);
+      initTrainRef.current({
+        dataset: options.initialTrain.dataset,
+        model_type: options.initialTrain.model_type,
+        center_shapes: options.initialTrain.center_shapes,
+        selected_features: options.initialTrain.selected_features ?? [],
+        points: options.initialTrain.points,
+        seed: options.initialTrain.seed,
+        n_estimators: options.initialTrain.n_estimators,
+        boost_rate: options.initialTrain.boost_rate,
+        init_reg: options.initialTrain.init_reg,
+        elm_alpha: options.initialTrain.elm_alpha,
+        early_stopping: options.initialTrain.early_stopping,
+        scale_y: options.initialTrain.scale_y,
+      });
+      return;
+    }
+    if (options.initialModel && options.initialModel !== "undefined") {
+      initModelSelectRef.current(options.initialModel);
+      return;
+    }
+    setModelSource("train");
+  }, []);
+
   // Build the save payload from the current state.
   const buildSavePayload = (): TrainResponse | null => {
     if (!modelInfo || !trainData || !currentVersion) return null;
@@ -410,12 +414,12 @@ export const useGamLab = (options: InitOptions = {}) => {
     };
   };
 
+  const defaultSaveName = () =>
+    `${dataset}-edited-${new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19)}`;
+
   // Persist edits and reload.
-  const handleSave = async () => {
-    if (!modelInfo) return;
-    const baseName = `${dataset}-edited-${new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19)}`;
-    const name = window.prompt("Save edited model as:", baseName);
-    if (!name) return;
+  const handleSave = async (name: string) => {
+    if (!modelInfo || !name) return;
     const payload = buildSavePayload();
     if (!payload) return;
     logEvent({
@@ -679,17 +683,17 @@ export const useGamLab = (options: InitOptions = {}) => {
     applyHistoryStep(historyCursor, "redo");
   };
 
+  const countCascadingDeletes = (index: number) => {
+    const featureKey = history[index]?.featureKey;
+    if (!featureKey) return 0;
+    return history.filter((e, i) => i > index && e.featureKey === featureKey).length;
+  };
+
   const deleteHistoryEntry = (index: number) => {
     const featureKey = history[index]?.featureKey;
     const entry = history[index];
     if (!featureKey || !entry) return;
-    const laterEntriesForFeature = history.filter((e, i) => i > index && e.featureKey === featureKey).length;
-    const message = laterEntriesForFeature > 0
-      ? `Delete this history entry for "${featureKey}"?\n\nThis will also delete ${laterEntriesForFeature} following entr${laterEntriesForFeature === 1 ? "y" : "ies"} for the same feature, because older history changes are the base for later ones.`
-      : `Delete this history entry for "${featureKey}"?`;
-    if (typeof window !== "undefined" && !window.confirm(message)) {
-      return;
-    }
+    const laterEntriesForFeature = countCascadingDeletes(index);
     // Remove the entry and all subsequent entries for the same feature.
     const nextHistory = history.filter((e, i) => i !== index && !(i > index && e.featureKey === featureKey));
     const removed = history.length - nextHistory.length;
@@ -891,10 +895,12 @@ export const useGamLab = (options: InitOptions = {}) => {
     undoLast,
     redoLast,
     deleteHistoryEntry,
+    countCascadingDeletes,
     metricWarning,
     modelSource,
     train,
     handleSave,
+    defaultSaveName,
     sidebarTab,
     setSidebarTab,
     selectedDataset,

@@ -85,6 +85,7 @@ function TrainPageInner() {
     setActivePartialIdx,
     metricWarning,
     handleSave,
+    defaultSaveName,
     train,
     sidebarTab,
     setSidebarTab,
@@ -96,6 +97,7 @@ function TrainPageInner() {
     undoLast,
     redoLast,
     deleteHistoryEntry,
+    countCascadingDeletes,
     currentVersion,
     trainData,
     modelInfo,
@@ -122,6 +124,7 @@ function TrainPageInner() {
   const toolSettings = useToolSettings();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
+  const [saveModal, setSaveModal] = useState<{ open: boolean; name: string }>({ open: false, name: "" });
   const prevResultRef = useRef<typeof result>(null);
 
   useEffect(() => {
@@ -280,6 +283,42 @@ function TrainPageInner() {
             <button className={trainStyles.introConfirmButton} type="submit">
               Bestätigen
             </button>
+          </form>
+        </div>
+      </div>
+    )}
+    {saveModal.open && (
+      <div className={trainStyles.kuerzelOverlay}>
+        <div className={trainStyles.kuerzelCard}>
+          <p className={trainStyles.introEyebrow}>Save model</p>
+          <form
+            className={trainStyles.kuerzelForm}
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSave(saveModal.name);
+              setSaveModal({ open: false, name: "" });
+            }}
+          >
+            <input
+              className={trainStyles.kuerzelInput}
+              type="text"
+              value={saveModal.name}
+              onChange={(e) => setSaveModal((prev) => ({ ...prev, name: e.target.value }))}
+              autoFocus
+            />
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button className={trainStyles.introConfirmButton} type="submit" style={{ flex: 1 }}>
+                Save
+              </button>
+              <button
+                type="button"
+                className={trainStyles.introConfirmButton}
+                style={{ flex: 1, background: "transparent", color: "inherit", border: "1px solid rgba(20,33,61,0.18)" }}
+                onClick={() => setSaveModal({ open: false, name: "" })}
+              >
+                Cancel
+              </button>
+            </div>
           </form>
         </div>
       </div>
@@ -582,9 +621,9 @@ function TrainPageInner() {
           {result ? (
             <div className={styles.shapePanelSlot}>
               <ShapeFunctionsPanel
-                shapes={result.version.shapes}
-                trainData={result.data}
-                featureDescriptions={result.data.featureDescriptions}
+                shapes={currentVersion!.shapes}
+                trainData={trainData!}
+                featureDescriptions={trainData?.featureDescriptions}
                 baselineKnots={baselineKnots}
                 fixedLinesByFeature={fixedLinesByFeature}
                 knots={knots}
@@ -601,7 +640,7 @@ function TrainPageInner() {
                 canUndo={historyCursor > 0}
                 onRedo={redoLast}
                 canRedo={historyCursor < history.length}
-                onSave={handleSave}
+                onSave={() => setSaveModal({ open: true, name: defaultSaveName() })}
                 toolSettings={toolSettings}
               />
               {partial ? (
@@ -613,6 +652,7 @@ function TrainPageInner() {
                   formatHistoryAction={formatHistoryAction}
                   formatHistoryDetail={formatHistoryDetail}
                   onDeleteHistoryEntry={deleteHistoryEntry}
+                  countCascadingDeletes={countCascadingDeletes}
                   shapes={currentVersion?.shapes ?? []}
                   trainData={trainData!}
                   activeFeatureKey={partial.key}
