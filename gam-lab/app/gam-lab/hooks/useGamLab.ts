@@ -84,7 +84,8 @@ const noopAuditLog: AuditLogFn = () => {};
 
 export const useGamLab = (options: InitOptions = {}) => {
   const logEvent = options.auditLogger ?? noopAuditLog;
-  // User-configurable training inputs.
+
+  // ─── Training settings ────────────────────────────────────────────────────
   const [dataset, setDataset] = useState(DATASETS[1].id);
   const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann_interactive");
   const [centerShapes, setCenterShapes] = useState(true);
@@ -99,15 +100,13 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [scaleY, setScaleY] = useState(true);
   const [sampleSize, setSampleSize] = useState(1000);
 
-  // Global training/loading status.
+  // ─── Model state ─────────────────────────────────────────────────────────
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
-
-  // Core separated state: model metadata, raw data, and accumulated versions.
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [trainData, setTrainData] = useState<TrainData | null>(null);
   const [versions, setVersions] = useState<ShapeFunctionVersion[]>([]);
+  const [modelSource, setModelSource] = useState<string>("");
 
-  // Persistent model store: all saved snapshots across sessions.
   const [savedModels, setSavedModels] = useState<ShapeFunctionVersion[]>([]);
   useEffect(() => {
     try {
@@ -116,7 +115,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     } catch {}
   }, []);
 
-  // Editing state for the current feature and its knot history.
+  // ─── Knot editing state ───────────────────────────────────────────────────
   const [activePartialIdx, setActivePartialIdx] = useState(0);
   const [baselineKnots, setBaselineKnots] = useState<Record<string, KnotSet>>({});
   const [knots, setKnots] = useState<KnotSet>({ x: [], y: [] });
@@ -124,25 +123,25 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [committedEdits, setCommittedEdits] = useState<Record<string, KnotSet>>({});
   const [selectedKnots, setSelectedKnots] = useState<number[]>([]);
 
-  // Derived model predictions and worker wiring.
-  const [models, setModels] = useState<Models | null>(null);
-  const workerRef = useRef<Worker | null>(null);
-  const workerDebounceRef = useRef<number | null>(null);
-  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, []);
+  // ─── Edit history ─────────────────────────────────────────────────────────
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyCursor, setHistoryCursor] = useState(0);
   const persistedEditsRef = useRef<Record<string, KnotSet>>({});
-
   const lastSelectionContextRef = useRef<{ versionId: string | null; featureKey: string | null }>({
     versionId: null,
     featureKey: null,
   });
 
-  // Model/source selector and sidebar tab state.
-  const [modelSource, setModelSource] = useState<string>("");
+  // ─── Background worker / predictions ─────────────────────────────────────
+  const [models, setModels] = useState<Models | null>(null);
+  const workerRef = useRef<Worker | null>(null);
+  const workerDebounceRef = useRef<number | null>(null);
+  useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null; }, []);
+
+  // ─── UI state ─────────────────────────────────────────────────────────────
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("edit");
 
-  // Convenience: latest version and active shape.
+  // ─── Derived selectors ────────────────────────────────────────────────────
   const currentVersion = useMemo<ShapeFunctionVersion | null>(
     () => versions[versions.length - 1] ?? null,
     [versions],
@@ -155,6 +154,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     [currentVersion, activePartialIdx],
   );
 
+  // ─── Saved-model management ───────────────────────────────────────────────
   const addSavedModel = (version: ShapeFunctionVersion, info: ModelInfo) => {
     const entry: ShapeFunctionVersion = { ...version, modelInfo: info };
     setSavedModels((prev) => {
@@ -188,7 +188,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     try { localStorage.removeItem("gam-lab-saved-models"); } catch {}
   };
 
-  // Apply a new API response: update model info, data, and current version.
+  // ─── Model lifecycle: train / load / save ─────────────────────────────────
   const applyResponse = (payload: TrainResponse) => {
     setModelInfo(payload.model);
     setTrainData(payload.data);
@@ -213,7 +213,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     };
   };
 
-  // Trigger a fresh training run.
   const train = async (
     overrides?: {
       dataset?: string;
@@ -283,7 +282,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
-  // Load a model when the selector changes.
   const handleModelSelect = async (value: string) => {
     logEvent({
       category: "model",
@@ -417,7 +415,6 @@ export const useGamLab = (options: InitOptions = {}) => {
   const defaultSaveName = () =>
     `${dataset}-edited-${new Date().toISOString().replace(/[:T]/g, "-").slice(0, 19)}`;
 
-  // Persist edits and reload.
   const handleSave = async (name: string) => {
     if (!modelInfo || !name) return;
     const payload = buildSavePayload();
@@ -458,7 +455,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     }
   };
 
-  // Rebuild editable knot state when a new version arrives.
+  // ─── Knot sync effects ────────────────────────────────────────────────────
   useEffect(() => {
     setActivePartialIdx(0);
     if (!currentVersion) return;
@@ -487,7 +484,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     });
   }, [currentVersion, logEvent]);
 
-  // Update the visible knot set when switching active features.
   useEffect(() => {
     if (!currentVersion) return;
     const active = currentVersion.shapes[activePartialIdx];
@@ -512,6 +508,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     lastSelectionContextRef.current = nextContext;
   }, [currentVersion, activePartialIdx, baselineKnots, knotEdits]);
 
+  // ─── Edit history logic ───────────────────────────────────────────────────
   const buildChanges = (before: KnotSet, after: KnotSet) => {
     const beforeMap = new Map<number, number>();
     const afterMap = new Map<number, number>();
@@ -575,7 +572,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     return { x: pairs.map((p) => p.x), y: pairs.map((p) => p.y) };
   };
 
-  // Record every edit action so the history sidebar can display it.
   const recordAction = (featureKey: string, before: KnotSet, after: KnotSet, action = "edit") => {
     const changes = buildChanges(before, after);
     if (!changes.length) return;
@@ -598,7 +594,6 @@ export const useGamLab = (options: InitOptions = {}) => {
     });
   };
 
-  // Save a committed version used by the worker to recompute predictions.
   const commitEdits = (featureKey: string, next: KnotSet) => {
     setCommittedEdits((prev) => ({ ...prev, [featureKey]: cloneKnots(next) }));
   };
@@ -713,6 +708,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     applyHistoryCursor(nextCursor, nextHistory);
   };
 
+  // ─── Worker predictions & metric warning ──────────────────────────────────
   const comparisonEdits = useMemo(
     () => (historyCursor > 0 ? rebuildEditsFromHistory(history.slice(0, historyCursor - 1)) : null),
     [history, historyCursor, rebuildEditsFromHistory],
@@ -778,7 +774,8 @@ export const useGamLab = (options: InitOptions = {}) => {
     return details.length ? { action: latestEntry.action, details } : null;
   }, [history, historyCursor, modelInfo, models, trainData]);
 
-  // Background worker keeps live predictions responsive during edits.
+  // Worker fires on every committed edit (debounced 40ms); incremental update
+  // recomputes only the one changed feature's contribution array.
   useEffect(() => {
     if (!currentVersion || !trainData) {
       if (workerDebounceRef.current != null) {
@@ -813,8 +810,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     };
   }, [baselineKnots, committedEdits, comparisonEdits, currentVersion, modelInfo, trainData]);
 
-  // Expose a synthetic `result` object so pages/components that pass `result` as a prop
-  // get a consistent view without needing individual model/data/version props.
+  // ─── Derived exports ──────────────────────────────────────────────────────
   const result = useMemo<TrainResponse | null>(() => {
     if (!modelInfo || !trainData || !currentVersion) return null;
     return { model: modelInfo, data: trainData, version: currentVersion };
@@ -844,6 +840,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     });
   }, [logEvent]);
 
+  // ─── Public API ───────────────────────────────────────────────────────────
   return {
     datasets: DATASETS,
     dataset,

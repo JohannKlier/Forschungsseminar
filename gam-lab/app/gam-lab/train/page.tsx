@@ -45,19 +45,26 @@ function TrainPageInner() {
   useEffect(() => setMounted(true), []);
   useUiAuditLogger(logEvent);
   const {
+    // Model lifecycle
     status,
     result,
+    train,
+    trainData,
+    modelInfo,
+    handleModelSelect,
+    metricWarning,
+
+    // Dataset & training settings
     datasets,
     dataset,
     setDataset,
+    selectedDataset,
     modelType,
     setModelType,
     centerShapes,
     setCenterShapes,
     selectedFeatures,
     setSelectedFeatures,
-    shapePoints,
-    setShapePoints,
     seed,
     setSeed,
     nEstimators,
@@ -72,7 +79,10 @@ function TrainPageInner() {
     setEarlyStopping,
     sampleSize,
     setSampleSize,
-    selectedDataset,
+
+    // Shape / knot editing
+    shapePoints,
+    setShapePoints,
     baselineKnots,
     fixedLinesByFeature,
     knots,
@@ -83,25 +93,24 @@ function TrainPageInner() {
     setSelectedKnots,
     activePartialIdx,
     setActivePartialIdx,
-    metricWarning,
-    handleSave,
-    defaultSaveName,
-    train,
-    sidebarTab,
-    setSidebarTab,
     partial,
+
+    // Edit history
     history,
     historyCursor,
+    currentVersion,
     recordAction,
     commitEdits,
     undoLast,
     redoLast,
     deleteHistoryEntry,
     countCascadingDeletes,
-    currentVersion,
-    trainData,
-    modelInfo,
-    handleModelSelect,
+
+    // UI state
+    sidebarTab,
+    setSidebarTab,
+    handleSave,
+    defaultSaveName,
   } = useGamLab({ auditLogger: logEvent });
 
   const [availableModels, setAvailableModels] = useState<string[]>([]);
