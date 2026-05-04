@@ -37,12 +37,11 @@ source .venv/bin/activate
 # Windows (PowerShell): .venv\Scripts\Activate.ps1
 # Windows (cmd.exe): .venv\Scripts\activate.bat
 pip install -r requirements.txt
-#python -m trainer_service.datasets (for potentially downloading datasets)
-#python -m trainer_service.generate_models (for generating preset models)
-uvicorn trainer_service.api:app --reload --port 4001
+#python -m datasets (for potentially downloading datasets)
+#python -m generate_models (for generating preset models)
+uvicorn api:app --reload --port 4001
 ```
 
 The API will be available at `http://localhost:4001` (or set `NEXT_PUBLIC_TRAINER_URL` / `TRAINER_URL` in `gam-lab` to match another port).
 
 Trainer saved models default to filesystem storage under `trainer-service/saved_models`.
-
