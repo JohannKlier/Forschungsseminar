@@ -24,7 +24,7 @@ export const useToolSettings = (): ToolSettings => {
   const [activeContinuousTool, setActiveContinuousTool] = useState<"drag" | "smooth">("drag");
   const [dragFalloffRadius, setDragFalloffRadius] = useState(4);
   const [dragRangeBoost, setDragRangeBoost] = useState(1);
-  const [dragCurve, setDragCurve] = useState<DragCurve>("gaussian");
+  const [dragCurve, setDragCurve] = useState<DragCurve>("adaptive");
   const [smoothAmount, setSmoothAmount] = useState(0.5);
   const [smoothingRangeMax, setSmoothingRangeMax] = useState(32);
   const [smoothingSpeed, setSmoothingSpeed] = useState(1);

@@ -439,6 +439,24 @@ export default function ShapeFunctionsPanel({
                         </button>
                       </div>
                       <div className={styles.toolTabPanel} role="tabpanel">
+                        {activeContinuousTool === "drag" && (
+                          <div className={styles.dragModeToggle}>
+                            <button
+                              type="button"
+                              className={`${styles.dragModeButton} ${dragCurve !== "adaptive" ? styles.dragModeButtonActive : ""}`}
+                              onClick={() => setDragCurve("gaussian")}
+                            >
+                              Standard
+                            </button>
+                            <button
+                              type="button"
+                              className={`${styles.dragModeButton} ${dragCurve === "adaptive" ? styles.dragModeButtonActive : ""}`}
+                              onClick={() => setDragCurve("adaptive")}
+                            >
+                              Adaptive
+                            </button>
+                          </div>
+                        )}
                         {activeContinuousTool === "smooth" && (
                           <>
                             <label className={styles.actionSettingLabel}>

@@ -49,6 +49,7 @@ export type ModelInfo = {
   init_reg: number;
   elm_alpha: number;
   early_stopping: number;
+  n_hid: number;
   scale_y: boolean;
   points: number;
 };

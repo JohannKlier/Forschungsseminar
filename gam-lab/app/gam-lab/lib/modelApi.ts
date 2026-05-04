@@ -91,6 +91,7 @@ const normalizeLegacyModelPayload = (payload: Record<string, unknown>): TrainRes
       init_reg: typeof payload.init_reg === "number" ? payload.init_reg : 1,
       elm_alpha: typeof payload.elm_alpha === "number" ? payload.elm_alpha : 1,
       early_stopping: typeof payload.early_stopping === "number" ? payload.early_stopping : 50,
+      n_hid: typeof payload.n_hid === "number" ? payload.n_hid : 10,
       scale_y: typeof payload.scale_y === "boolean" ? payload.scale_y : true,
       points: typeof payload.points === "number" ? payload.points : 250,
     },
@@ -134,6 +135,7 @@ export type TrainRequest = {
   init_reg: number;
   elm_alpha: number;
   early_stopping: number;
+  n_hid: number;
   scale_y: boolean;
   sample_size?: number;
 };

@@ -77,6 +77,8 @@ function TrainPageInner() {
     setElmAlpha,
     earlyStopping,
     setEarlyStopping,
+    nHid,
+    setNHid,
     sampleSize,
     setSampleSize,
 
@@ -606,6 +608,7 @@ function TrainPageInner() {
                       { id: "train-initreg", label: "Init reg", value: initReg, step: 0.01, min: 0.01, max: 10, set: setInitReg },
                       { id: "train-elmalpha", label: "ELM alpha", value: elmAlpha, step: 0.01, min: 0.01, max: 10, set: setElmAlpha },
                       { id: "train-earlystop", label: "Early stopping", value: earlyStopping, step: 1, min: 5, max: 200, set: setEarlyStopping },
+                      { id: "train-nhid", label: "Hidden neurons", value: nHid, step: 1, min: 1, max: 100, set: setNHid },
                     ].map(({ id, label, value, step, min, max, set }) => (
                       <div key={id} className={trainStyles.field}>
                         <label className={trainStyles.fieldLabel} htmlFor={id}>{label}</label>

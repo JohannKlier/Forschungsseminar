@@ -12,7 +12,7 @@ import styles from "../page.module.css";
 import { applyBrushSelection, applyClickSelection, resolveDragSelection } from "../lib/selection";
 import { smoothSeriesGaussianReflect, smoothSeriesBox, smoothSeriesMedian, smoothSeriesEWMA, smoothSeriesTikhonov } from "../lib/smoothing";
 
-export type DragCurve = "gaussian" | "linear" | "cosine" | "sharp";
+export type DragCurve = "gaussian" | "linear" | "cosine" | "sharp" | "adaptive";
 export type SmoothingAlgorithm = "gaussian" | "box" | "median" | "exponential" | "tikhonov";
 import {
   applyCommonAxisStyles,
@@ -1086,9 +1086,23 @@ export default function VisxShapeEditor({
             dist > dynamicRadius
               ? rawWeight * 0.5 * (1 + Math.cos(Math.PI * (dist - dynamicRadius) / fade))
               : rawWeight;
-          weights[idx] = tapered;
-          if (tapered > maxWeight) maxWeight = tapered;
-          nextY[idx] = base + delta * tapered;
+          // Adaptive mode: reduce influence on knots already displaced in the drag direction.
+          const yFactor = (() => {
+            if (dragCurve !== "adaptive") return 1;
+            const nearestTarget = sortedTargets.reduce(
+              (best, t) => (Math.abs(t - idx) < Math.abs(best - idx) ? t : best),
+              sortedTargets[0],
+            );
+            const yDiff = base - (startMap[nearestTarget] ?? base);
+            const absDelta = Math.abs(delta);
+            if (absDelta < 1e-6) return 1;
+            const displaced = Math.max(0, yDiff * Math.sign(delta)) / absDelta;
+            return Math.max(0, 1 - displaced);
+          })();
+          const finalWeight = tapered * yFactor;
+          weights[idx] = finalWeight;
+          if (finalWeight > maxWeight) maxWeight = finalWeight;
+          nextY[idx] = base + delta * finalWeight;
         }
         dragWeightsMaxRef.current = maxWeight;
         pendingDragRef.current = pending;

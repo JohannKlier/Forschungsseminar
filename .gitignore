@@ -5,6 +5,7 @@ docs/
 .claude/
 .codex
 .codex/
+.agents/
 
 # Local datasets
 trainer-service/trainer_service/data/*

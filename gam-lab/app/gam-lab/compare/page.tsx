@@ -384,6 +384,7 @@ export default function ComparePage() {
       init_reg: 1,
       elm_alpha: 1,
       early_stopping: 50,
+      n_hid: 10,
       scale_y: true,
       points: 250,
       sample_size: c.dataset === "mimic4_mean_100_full" ? c.sampleSize : undefined,

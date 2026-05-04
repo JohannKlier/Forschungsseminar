@@ -73,6 +73,7 @@ type InitOptions = {
     init_reg: number;
     elm_alpha: number;
     early_stopping: number;
+    n_hid: number;
     scale_y: boolean;
   } | null;
   auditLogger?: AuditLogFn;
@@ -97,6 +98,7 @@ export const useGamLab = (options: InitOptions = {}) => {
   const [initReg, setInitReg] = useState(1);
   const [elmAlpha, setElmAlpha] = useState(1);
   const [earlyStopping, setEarlyStopping] = useState(50);
+  const [nHid, setNHid] = useState(10);
   const [scaleY, setScaleY] = useState(true);
   const [sampleSize, setSampleSize] = useState(1000);
 
@@ -226,6 +228,7 @@ export const useGamLab = (options: InitOptions = {}) => {
       init_reg?: number;
       elm_alpha?: number;
       early_stopping?: number;
+      n_hid?: number;
       scale_y?: boolean;
       sample_size?: number;
     },
@@ -242,6 +245,7 @@ export const useGamLab = (options: InitOptions = {}) => {
       init_reg: overrides?.init_reg ?? initReg,
       elm_alpha: overrides?.elm_alpha ?? elmAlpha,
       early_stopping: overrides?.early_stopping ?? earlyStopping,
+      n_hid: overrides?.n_hid ?? nHid,
       scale_y: overrides?.scale_y ?? scaleY,
       sample_size: overrides?.sample_size ?? sampleSize,
     };
@@ -317,6 +321,7 @@ export const useGamLab = (options: InitOptions = {}) => {
       if (typeof payload.model.init_reg === "number") setInitReg(payload.model.init_reg);
       if (typeof payload.model.elm_alpha === "number") setElmAlpha(payload.model.elm_alpha);
       if (typeof payload.model.early_stopping === "number") setEarlyStopping(payload.model.early_stopping);
+      if (typeof payload.model.n_hid === "number") setNHid(payload.model.n_hid);
       if (typeof payload.version.center_shapes === "boolean") setCenterShapes(payload.version.center_shapes);
       logEvent({
         category: "model",
@@ -363,6 +368,7 @@ export const useGamLab = (options: InitOptions = {}) => {
       setInitReg(options.initialTrain.init_reg);
       setElmAlpha(options.initialTrain.elm_alpha);
       setEarlyStopping(options.initialTrain.early_stopping);
+      setNHid(options.initialTrain.n_hid);
       setScaleY(options.initialTrain.scale_y);
       initTrainRef.current({
         dataset: options.initialTrain.dataset,
@@ -376,6 +382,7 @@ export const useGamLab = (options: InitOptions = {}) => {
         init_reg: options.initialTrain.init_reg,
         elm_alpha: options.initialTrain.elm_alpha,
         early_stopping: options.initialTrain.early_stopping,
+        n_hid: options.initialTrain.n_hid,
         scale_y: options.initialTrain.scale_y,
       });
       return;
@@ -865,6 +872,8 @@ export const useGamLab = (options: InitOptions = {}) => {
     setElmAlpha,
     earlyStopping,
     setEarlyStopping,
+    nHid,
+    setNHid,
     scaleY,
     setScaleY,
     sampleSize,

@@ -341,6 +341,7 @@ function ModelInfoPanel({ modelInfo, version }: { modelInfo: ModelInfo; version:
     ["init_reg",       modelInfo.init_reg],
     ["elm_alpha",      modelInfo.elm_alpha],
     ["early_stopping", modelInfo.early_stopping],
+    ["n_hid",          modelInfo.n_hid],
     ["seed",           modelInfo.seed],
     ["scale_y",        String(modelInfo.scale_y)],
     ["center_shapes",  String(version.center_shapes)],

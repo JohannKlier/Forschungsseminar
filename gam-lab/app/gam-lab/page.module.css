@@ -3165,3 +3165,34 @@
   padding: 0.1rem 0.4rem;
   color: var(--ink);
 }
+
+.dragModeToggle {
+  display: flex;
+  gap: 0.3rem;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+
+.dragModeButton {
+  flex: 1;
+  padding: 0.2rem 0;
+  border: 1px solid #dbe4ee;
+  border-radius: 0.4rem;
+  background: #eef2f6;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  text-align: center;
+}
+
+.dragModeButton:hover:not(.dragModeButtonActive) {
+  background: #e2e8f0;
+}
+
+.dragModeButtonActive {
+  background: #0ea5e9;
+  color: #fff;
+  border-color: #0ea5e9;
+}
