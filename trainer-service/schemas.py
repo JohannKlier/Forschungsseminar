@@ -22,5 +22,6 @@ class TrainRequest(BaseModel):
     init_reg: float = 1
     elm_alpha: float = 1
     early_stopping: int = 50
+    n_hid: int = 10
     scale_y: bool = True
     sample_size: int | None = None

@@ -375,8 +375,9 @@ def build_train_response(request: TrainRequest):
     n_estimators = max(10, min(500, request.n_estimators))
     boost_rate = max(0.01, min(1.0, request.boost_rate))
     init_reg = max(0.01, min(10.0, request.init_reg))
-    elm_alpha = max(0.0001, min(10.0, request.elm_alpha))
+    elm_alpha = max(0.0, min(10.0, request.elm_alpha))
     early_stopping = max(5, min(200, request.early_stopping))
+    n_hid = max(1, min(100, request.n_hid))
 
     classification_datasets = {"mimic4_mean_100_full"}
     task_type = "classification" if request.dataset in classification_datasets else "regression"
@@ -424,6 +425,7 @@ def build_train_response(request: TrainRequest):
         init_reg=init_reg,
         elm_alpha=elm_alpha,
         early_stopping=early_stopping,
+        n_hid=n_hid,
         device="cpu",
         random_state=request.seed,
         verbose=0,
@@ -552,6 +554,7 @@ def build_train_response(request: TrainRequest):
             "init_reg": init_reg,
             "elm_alpha": elm_alpha,
             "early_stopping": early_stopping,
+            "n_hid": n_hid,
             "scale_y": use_scale_y,
             "points": num_points,
         },
