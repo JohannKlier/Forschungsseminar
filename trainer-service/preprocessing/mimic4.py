@@ -45,58 +45,6 @@ MIMIC4_SAMPLE_SIZE = 1000  # default rows drawn when no sample_size is passed
 MIMIC4_CATEGORICAL_FEATURES = ["Eth", "Sex"]
 
 
-# ── Feature catalog ──────────────────────────────────────────────────────────
-# Edit descriptions here — they are served directly to the frontend.
-# Keys must match the column names in mimic4_mean_100_full.csv after preprocessing.
-
-MIMIC4_DESCRIPTIONS: dict[str, str] = {
-    # Demographics
-    "Age":              "Patient age at ICU admission.",
-    "Eth":              "Patient ethnicity.",
-    "Sex":              "Patient sex.",
-    # Stay info
-    "LOS":              "Length of ICU stay in days.",
-    # Vitals
-    "HR+100%mean":      "Mean heart rate (beats/min).",
-    "RR+100%mean":      "Mean respiratory rate (breaths/min).",
-    "SBP+100%mean":     "Mean systolic blood pressure (mmHg).",
-    "DBP+100%mean":     "Mean diastolic blood pressure (mmHg).",
-    "MBP+100%mean":     "Mean mean arterial pressure (mmHg).",
-    "Temp+100%mean":    "Mean body temperature (°C).",
-    # Anthropometrics
-    "Weight+100%mean":  "Mean body weight during ICU stay (kg).",
-    "Height+100%mean":  "Mean height during ICU stay (cm).",
-    "Bmi+100%mean":     "Mean body mass index during stay.",
-    # Neurological
-    "GCST+100%mean":    "Mean Glasgow Coma Scale total score (3–15); lower = more impaired.",
-    # Respiratory / blood gas
-    "FiO2+100%mean":    "Mean fraction of inspired oxygen (0–1).",
-    "PaO2+100%mean":    "Mean partial pressure of arterial oxygen (mmHg).",
-    "PaCO2+100%mean":   "Mean partial pressure of arterial CO₂ (mmHg).",
-    "Ph+100%mean":      "Mean arterial blood pH.",
-    "HCO3+100%mean":    "Mean serum bicarbonate (mEq/L) — acid-base balance.",
-    # Metabolic / glucose
-    "GLU+100%mean":     "Mean blood glucose level (mg/dL).",
-    "Lactate+100%mean": "Mean blood lactate (mmol/L) — tissue perfusion marker.",
-    "AnionGAP+100%mean":"Mean anion gap (mEq/L) — metabolic acidosis indicator.",
-    # Electrolytes
-    "Kalium+100%mean":  "Mean serum potassium (mEq/L).",
-    "Natrium+100%mean": "Mean serum sodium (mEq/L).",
-    # Kidney
-    "Kreatinin+100%mean":"Mean serum creatinine (mg/dL) — kidney function marker.",
-    "Urea+100%mean":    "Mean blood urea nitrogen (mg/dL).",
-    # Liver
-    "Bilirubin+100%mean":"Mean total bilirubin (mg/dL) — liver function marker.",
-    "ALAT+100%mean":    "Mean alanine aminotransferase (U/L) — liver enzyme.",
-    "ASAT+100%mean":    "Mean aspartate aminotransferase (U/L) — liver enzyme.",
-    "Albumin+100%mean": "Mean serum albumin (g/dL) — nutritional and hepatic marker.",
-    # Haematology
-    "Hb+100%mean":      "Mean hemoglobin concentration (g/dL).",
-    "Leukocyten+100%mean":"Mean white blood cell count (10³/μL).",
-    "Thrombocyten+100%mean":"Mean platelet count (10³/μL).",
-    "Quick+100%mean":   "Mean Quick / prothrombin time (%) — coagulation marker.",
-}
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -197,4 +145,4 @@ def preprocess_mimic4_mean_100_full(seed: int, sample_size: int | None = None):
     }
     labels = {col: col for col in x_processed.columns}
 
-    return x_processed, y.to_numpy(), cat_info, labels, MIMIC4_DESCRIPTIONS, []
+    return x_processed, y.to_numpy(), cat_info, labels, []

@@ -10,10 +10,7 @@ import pandas as pd
 from sklearn.metrics import accuracy_score, mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
-from preprocessing import (
-    preprocess_bike_hourly,
-    preprocess_mimic4_mean_100_full,
-)
+from dataset_registry import get_dataset
 from schemas import TrainRequest
 
 
@@ -286,21 +283,19 @@ def _build_2d_grid_for_operation(operation_spec: Dict, shape_1d: Dict, x_train, 
 
 
 def _load_dataset(request: TrainRequest):
-    if request.dataset == "mimic4_mean_100_full":
-        return preprocess_mimic4_mean_100_full(request.seed, request.sample_size)
-    return preprocess_bike_hourly(request.seed)
+    cfg = get_dataset(request.dataset)
+    return cfg.preprocessor(request.seed, request.sample_size)
 
 
 def build_dataset_feature_summary(dataset: str, seed: int = 3) -> Dict:
-    supported_datasets = {"bike_hourly", "mimic4_mean_100_full"}
-    if dataset not in supported_datasets:
-        raise HTTPException(
-            status_code=400,
-            detail="Only bike_hourly and mimic4_mean_100_full are supported.",
-        )
+    try:
+        cfg = get_dataset(dataset)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Unknown dataset: {dataset}")
 
     request = TrainRequest(dataset=dataset, seed=seed)
-    x_processed, _y_full, cat_info, labels, descriptions, interaction_specs = _load_dataset(request)
+    x_processed, _y_full, cat_info, labels, interaction_specs = _load_dataset(request)
+    descriptions = cfg.descriptions
     dummy_keys = {col for spec in interaction_specs for col in spec["dummy_cols"]}
     features = []
 
@@ -342,7 +337,7 @@ def build_dataset_feature_summary(dataset: str, seed: int = 3) -> Dict:
             "max": max_value,
         })
 
-    return {"dataset": dataset, "features": features}
+    return {"dataset": dataset, "features": features, "default_features": cfg.default_features}
 
 
 def _calc_metrics(task_type: str, y_true: np.ndarray, y_pred: np.ndarray) -> Dict:
@@ -362,12 +357,10 @@ def _calc_metrics(task_type: str, y_true: np.ndarray, y_pred: np.ndarray) -> Dic
 
 
 def build_train_response(request: TrainRequest):
-    supported_datasets = {"bike_hourly", "mimic4_mean_100_full"}
-    if request.dataset not in supported_datasets:
-        raise HTTPException(
-            status_code=400,
-            detail="Only bike_hourly and mimic4_mean_100_full are supported.",
-        )
+    try:
+        cfg = get_dataset(request.dataset)
+    except KeyError:
+        raise HTTPException(status_code=400, detail=f"Unknown dataset: {request.dataset}")
     model_type = request.model_type if request.model_type in {"igann", "igann_interactive"} else "igann_interactive"
     center_shapes = bool(getattr(request, "center_shapes", False))
 
@@ -379,11 +372,11 @@ def build_train_response(request: TrainRequest):
     early_stopping = max(5, min(200, request.early_stopping))
     n_hid = max(1, min(100, request.n_hid))
 
-    classification_datasets = {"mimic4_mean_100_full"}
-    task_type = "classification" if request.dataset in classification_datasets else "regression"
+    task_type = cfg.task_type
     igann_task = task_type
 
-    x_processed, y_full, cat_info, labels, descriptions, interaction_specs = _load_dataset(request)
+    x_processed, y_full, cat_info, labels, interaction_specs = _load_dataset(request)
+    descriptions = cfg.descriptions
 
     all_dummy_keys_set = {col for spec in interaction_specs for col in spec["dummy_cols"]}
 

@@ -134,13 +134,14 @@ function TrainPageInner() {
   const { formatHistoryAction, formatHistoryDetail } = useSidebarActions({ history });
   const toolSettings = useToolSettings();
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showDatasetIntro, setShowDatasetIntro] = useState(false);
   const [showIntro, setShowIntro] = useState(false);
   const [saveModal, setSaveModal] = useState<{ open: boolean; name: string }>({ open: false, name: "" });
   const prevResultRef = useRef<typeof result>(null);
 
   useEffect(() => {
     if (result && !prevResultRef.current) {
-      setShowIntro(true);
+      setShowDatasetIntro(true);
     }
     prevResultRef.current = result;
   }, [result]);
@@ -148,6 +149,7 @@ function TrainPageInner() {
   const [featureSummaryState, setFeatureSummaryState] = useState<{
     dataset: string;
     summaries: Record<string, FeatureSummary>;
+    defaultFeatures: string[] | null;
   } | null>(null);
 
   useEffect(() => {
@@ -157,10 +159,10 @@ function TrainPageInner() {
       try {
         const response = await fetch(`/api/datasets/${encodeURIComponent(dataset)}/features?seed=${encodeURIComponent(String(seed))}`);
         if (!response.ok) return;
-        const payload = (await response.json()) as { features?: FeatureSummary[] };
+        const payload = (await response.json()) as { features?: FeatureSummary[]; default_features?: string[] | null };
         if (cancelled) return;
         const summaries = Object.fromEntries((payload.features ?? []).map((feature) => [feature.key, feature]));
-        setFeatureSummaryState({ dataset, summaries });
+        setFeatureSummaryState({ dataset, summaries, defaultFeatures: payload.default_features ?? null });
       } catch (error) {
         console.warn("Failed to load dataset feature summaries.", error);
       }
@@ -173,11 +175,14 @@ function TrainPageInner() {
     };
   }, [dataset, seed]);
 
-  const featureSummaries = featureSummaryState?.dataset === dataset ? featureSummaryState.summaries : {};
+  const currentSummaryState = featureSummaryState?.dataset === dataset ? featureSummaryState : null;
+  const featureSummaries = currentSummaryState?.summaries ?? {};
+  const defaultFeatures = currentSummaryState?.defaultFeatures ?? null;
   const availableFeatures = useMemo(() => Object.values(featureSummaries), [featureSummaries]);
   const featureKeys = useMemo(() => availableFeatures.map((feature) => feature.key), [availableFeatures]);
 
   useEffect(() => {
+    if (!featureKeys.length) return;
     setSelectedFeatures((prev) => {
       const validPrev = prev.filter((feature) => featureKeys.includes(feature));
       if (validPrev.length > 0) {
@@ -186,12 +191,12 @@ function TrainPageInner() {
         }
         return validPrev;
       }
-      if (featureKeys.length === prev.length && featureKeys.every((feature, index) => feature === prev[index])) {
-        return prev;
-      }
+      // No valid previous selection — apply dataset defaults, or fall back to all features.
+      const defaults = defaultFeatures?.filter((f) => featureKeys.includes(f));
+      if (defaults?.length) return defaults;
       return featureKeys;
     });
-  }, [featureKeys, setSelectedFeatures]);
+  }, [featureKeys, defaultFeatures, setSelectedFeatures]);
 
   const featureSelection = (() => {
     const selected = new Set(selectedFeatures);
@@ -295,6 +300,75 @@ function TrainPageInner() {
               Bestätigen
             </button>
           </form>
+        </div>
+      </div>
+    )}
+    {showDatasetIntro && (
+      <div className={trainStyles.introOverlay}>
+        <div className={trainStyles.introCard}>
+          <div className={trainStyles.introHeader}>
+            <p className={trainStyles.introEyebrow}>User Study — GAM Lab</p>
+            <h1 className={trainStyles.introHeading}>Der Datensatz</h1>
+            <p className={trainStyles.introLead}>
+              In dieser Studie arbeiten Sie mit echten Intensivstationsdaten aus{" "}
+              <strong>MIMIC-IV</strong>, einer großen klinischen Datenbank des
+              Massachusetts General Hospital. Ihr Modell soll vorhersagen, ob ein
+              Patient die Intensivstation <strong>überlebt oder nicht</strong>.
+            </p>
+          </div>
+
+          <div className={trainStyles.introSteps}>
+            <div className={trainStyles.introStep}>
+              <div className={trainStyles.introStepIcon}>
+                <span className={trainStyles.introStepNum}>1</span>
+              </div>
+              <div className={trainStyles.introStepBody}>
+                <p className={trainStyles.introStepTitle}>Patienten</p>
+                <p className={trainStyles.introStepText}>
+                  Der Datensatz enthält 1.000 zufällig ausgewählte ICU-Aufenthalte,
+                  balanciert nach Outcome (Überlebt / Verstorben).
+                </p>
+              </div>
+            </div>
+            <div className={trainStyles.introStep}>
+              <div className={trainStyles.introStepIcon}>
+                <span className={trainStyles.introStepNum}>2</span>
+              </div>
+              <div className={trainStyles.introStepBody}>
+                <p className={trainStyles.introStepTitle}>Merkmale</p>
+                <p className={trainStyles.introStepText}>
+                  Verfügbar sind demografische Angaben (Alter, Geschlecht,
+                  Ethnizität), Aufenthaltsdauer sowie Mittelwerte von Vitalzeichen
+                  und Laborwerten über den gesamten ICU-Aufenthalt.
+                </p>
+              </div>
+            </div>
+            <div className={trainStyles.introStep}>
+              <div className={trainStyles.introStepIcon}>
+                <span className={trainStyles.introStepNum}>3</span>
+              </div>
+              <div className={trainStyles.introStepBody}>
+                <p className={trainStyles.introStepTitle}>Ihre Aufgabe</p>
+                <p className={trainStyles.introStepText}>
+                  Sie wählen zunächst aus, welche Merkmale das Modell verwenden soll,
+                  und trainieren es anschließend. Danach beurteilen Sie, ob das
+                  Modell medizinisch plausible Zusammenhänge gelernt hat.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className={trainStyles.introFooter}>
+            <button
+              className={trainStyles.introConfirmButton}
+              onClick={() => {
+                setShowDatasetIntro(false);
+                setShowIntro(true);
+              }}
+            >
+              Verstanden — weiter
+            </button>
+          </div>
         </div>
       </div>
     )}
@@ -510,11 +584,7 @@ function TrainPageInner() {
                   <button
                     type="button"
                     className={trainStyles.trainButton}
-                    onClick={() => {
-                      train({
-                        selected_features: selectedFeatures,
-                      });
-                    }}
+                    onClick={() => train({ selected_features: selectedFeatures })}
                     disabled={status === "loading" || selectedFeatures.length === 0}
                   >
                     {status === "loading" ? "Training…" : "Train"}

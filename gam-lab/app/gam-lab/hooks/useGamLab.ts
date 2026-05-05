@@ -4,8 +4,8 @@ import { loadModel, trainModel } from "../lib/modelApi";
 import { loadSavedModel, saveModel } from "../lib/savedModelApi";
 import { type AuditLogFn } from "../lib/audit";
 
-// Dataset registry used by the UI selectors and training requests.
-const DATASETS: DatasetOption[] = [
+// Fallback used until the backend responds. Matches the backend registry.
+const FALLBACK_DATASETS: DatasetOption[] = [
   { id: "bike_hourly", label: "Bike sharing (hourly)", summary: "Hourly rentals with weather/seasonality." },
   {
     id: "mimic4_mean_100_full",
@@ -87,7 +87,17 @@ export const useGamLab = (options: InitOptions = {}) => {
   const logEvent = options.auditLogger ?? noopAuditLog;
 
   // ─── Training settings ────────────────────────────────────────────────────
-  const [dataset, setDataset] = useState(DATASETS[1].id);
+  const [datasets, setDatasets] = useState<DatasetOption[]>(FALLBACK_DATASETS);
+  useEffect(() => {
+    fetch("/api/datasets")
+      .then((r) => r.json())
+      .then((payload: { datasets?: DatasetOption[] }) => {
+        if (payload.datasets?.length) setDatasets(payload.datasets);
+      })
+      .catch(() => {});
+  }, []);
+
+  const [dataset, setDataset] = useState(FALLBACK_DATASETS[1].id);
   const [modelType, setModelType] = useState<"igann" | "igann_interactive">("igann_interactive");
   const [centerShapes, setCenterShapes] = useState(true);
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
@@ -149,7 +159,7 @@ export const useGamLab = (options: InitOptions = {}) => {
     [versions],
   );
 
-  const selectedDataset = useMemo(() => DATASETS.find((item) => item.id === dataset) ?? DATASETS[0], [dataset]);
+  const selectedDataset = useMemo(() => datasets.find((item) => item.id === dataset) ?? datasets[0] ?? FALLBACK_DATASETS[0], [dataset, datasets]);
 
   const partial = useMemo<ShapeFunction | null>(
     () => (currentVersion ? currentVersion.shapes[activePartialIdx] ?? currentVersion.shapes[0] ?? null : null),
@@ -849,7 +859,7 @@ export const useGamLab = (options: InitOptions = {}) => {
 
   // ─── Public API ───────────────────────────────────────────────────────────
   return {
-    datasets: DATASETS,
+    datasets,
     dataset,
     modelType,
     centerShapes,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI, HTTPException
 
+from dataset_registry import REGISTRY
 from json_utils import to_jsonable
 from model_store import list_model_names, load_model_payload, normalize_stored_model_payload
 from schemas import SaveModelRequest, TrainRequest
@@ -14,6 +15,16 @@ from training import build_dataset_feature_summary, build_train_response
 
 
 app = FastAPI()
+
+
+@app.get("/datasets")
+def list_datasets():
+    return {
+        "datasets": [
+            {"id": cfg.id, "label": cfg.label, "summary": cfg.summary}
+            for cfg in REGISTRY.values()
+        ]
+    }
 
 
 @app.post("/train")
